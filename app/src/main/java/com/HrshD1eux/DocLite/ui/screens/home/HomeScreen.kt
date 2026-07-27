@@ -149,9 +149,17 @@ fun HomeScreen(
     }
 
     fun shareFile(file: DocumentFile) {
+        val uri = Uri.parse(file.uriString)
+        val shareUri = if (uri.scheme == "file" || uri.scheme == null) {
+            val path = uri.path ?: file.path
+            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(path))
+        } else {
+            uri
+        }
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "*/*"
-            putExtra(Intent.EXTRA_STREAM, Uri.parse(file.uriString))
+            putExtra(Intent.EXTRA_STREAM, shareUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(shareIntent, "Share Document"))
     }

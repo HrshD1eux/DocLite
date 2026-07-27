@@ -22,6 +22,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -137,6 +146,12 @@ fun ExcelEditorScreen(
                     ?: Sheet("Sheet1")
 
                 val colScrollState = rememberScrollState()
+                
+                // State for resizing columns and rows, and for zooming
+                val colWidths = remember { mutableStateMapOf<Int, Dp>() }
+                val rowHeights = remember { mutableStateMapOf<Int, Dp>() }
+                var scale by remember { mutableStateOf(1f) }
+                var offset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -237,7 +252,19 @@ fun ExcelEditorScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(8.dp),
+                            .padding(8.dp)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(0.5f, 3f)
+                                    offset += pan
+                                }
+                            }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y
+                            ),
                         shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -269,17 +296,37 @@ fun ExcelEditorScreen(
                                         }
 
                                         for (c in 0 until activeSheet.colCount) {
-                                            Box(
+                                            val currentWidth = colWidths[c] ?: 100.dp
+                                            Row(
                                                 modifier = Modifier
-                                                    .width(100.dp)
                                                     .height(32.dp)
-                                                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                                                contentAlignment = Alignment.Center
+                                                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                                             ) {
-                                                Text(
-                                                    text = Sheet.colIndexToName(c),
-                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(currentWidth)
+                                                        .height(32.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = Sheet.colIndexToName(c),
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
+                                                // Draggable handle for column resizing
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(10.dp)
+                                                        .height(32.dp)
+                                                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                                        .pointerInput(c) {
+                                                            detectDragGestures { change, dragAmount ->
+                                                                change.consume()
+                                                                val newWidth = (currentWidth + dragAmount.x.dp).coerceAtLeast(40.dp)
+                                                                colWidths[c] = newWidth
+                                                            }
+                                                        }
                                                 )
                                             }
                                         }
@@ -292,29 +339,50 @@ fun ExcelEditorScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         // Row Index Header
-                                        Box(
+                                        val currentHeight = rowHeights[r] ?: 38.dp
+                                        Column(
                                             modifier = Modifier
                                                 .width(44.dp)
-                                                .height(38.dp)
                                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                                            contentAlignment = Alignment.Center
+                                                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                                         ) {
-                                            Text(
-                                                text = "${r + 1}",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(44.dp)
+                                                    .height(currentHeight),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "${r + 1}",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            // Draggable handle for row resizing
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(44.dp)
+                                                    .height(6.dp)
+                                                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                                    .pointerInput(r) {
+                                                        detectDragGestures { change, dragAmount ->
+                                                            change.consume()
+                                                            val newHeight = (currentHeight + dragAmount.y.dp).coerceAtLeast(24.dp)
+                                                            rowHeights[r] = newHeight
+                                                        }
+                                                    }
                                             )
                                         }
 
                                         for (c in 0 until activeSheet.colCount) {
                                             val isSelected = r == uiState.selectedRow && c == uiState.selectedCol
                                             val cell = activeSheet.getCell(r, c)
-
+                                            val currentWidth = (colWidths[c] ?: 100.dp) + 10.dp // Add 10dp for the divider
+                                            
                                             Box(
                                                 modifier = Modifier
-                                                    .width(100.dp)
-                                                    .height(38.dp)
+                                                    .width(currentWidth)
+                                                    .height(currentHeight + 6.dp) // Add 6dp for the divider
                                                     .background(
                                                         if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                                                         else cell.format.getBgColor()

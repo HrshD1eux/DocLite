@@ -213,8 +213,7 @@ class FileRepository(
             "doc", "docx", "txt", "rtf",
             "xls", "xlsx", "csv",
             "ppt", "pptx",
-            "pdf",
-            "jpg", "jpeg", "png", "webp", "gif"
+            "pdf"
         )
 
         val visitedDirs = mutableSetOf<String>()

@@ -533,17 +533,19 @@ private fun AnalysisResultView(
         }
 
         // Tab Contents
-        when (state.activeTab) {
-            0 -> PartyListSection(
-                title = "Top 60 Debit Recipients (Highest Sent)",
-                parties = filteredRecipients,
-                isCredit = false
-            )
-            1 -> PartyListSection(
-                title = "Top 60 Credit Senders (Highest Received)",
-                parties = filteredSenders,
-                isCredit = true
-            )
+        Box(modifier = Modifier.weight(1f)) {
+            when (state.activeTab) {
+                0 -> PartyListSection(
+                    title = "Top 60 Debit Recipients (Highest Sent)",
+                    parties = filteredRecipients,
+                    isCredit = false
+                )
+                1 -> PartyListSection(
+                    title = "Top 60 Credit Senders (Highest Received)",
+                    parties = filteredSenders,
+                    isCredit = true
+                )
+            }
         }
     }
 }

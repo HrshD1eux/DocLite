@@ -5,6 +5,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +75,8 @@ fun PdfAnnotatorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showStickyNoteDialog by remember { mutableStateOf(false) }
     var noteText by remember { mutableStateOf("") }
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(fileUri) {
         viewModel.openPdf(fileUri)
@@ -175,14 +181,7 @@ fun PdfAnnotatorScreen(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(
-                                onClick = { viewModel.addHighlightAnnotation(uiState.currentPageIndex) },
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    containerColor = if (uiState.selectedAnnotationTool == AnnotationType.HIGHLIGHT) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                                )
-                            ) {
-                                Icon(Icons.Default.Highlight, contentDescription = "Highlight", tint = MaterialTheme.colorScheme.primary)
-                            }
+
 
                             IconButton(
                                 onClick = { showStickyNoteDialog = true },
@@ -209,7 +208,29 @@ fun PdfAnnotatorScreen(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(12.dp)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    if (scale > 1f) {
+                                        offset += pan
+                                    } else {
+                                        offset = Offset.Zero
+                                        // Swipe gestures only if not zoomed in
+                                        if (pan.y < -50) { // swipe up
+                                            viewModel.goToPage(uiState.currentPageIndex + 1)
+                                        } else if (pan.y > 50) { // swipe down
+                                            viewModel.goToPage(uiState.currentPageIndex - 1)
+                                        }
+                                    }
+                                }
+                            }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         if (uiState.currentPageBitmap != null) {

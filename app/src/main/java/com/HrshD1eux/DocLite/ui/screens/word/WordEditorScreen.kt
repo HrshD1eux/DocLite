@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -27,7 +28,9 @@ import androidx.compose.material.icons.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Card
@@ -237,6 +240,16 @@ fun WordEditorScreen(
                                 ) {
                                     Icon(Icons.Default.FormatAlignCenter, contentDescription = "Align Center")
                                 }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { viewModel.setFontSize(uiState.fontSizeSp - 2f) }) {
+                                        Icon(Icons.Default.Remove, contentDescription = "Decrease Font Size", modifier = Modifier.size(16.dp))
+                                    }
+                                    Icon(Icons.Default.FormatSize, contentDescription = "Font Size", modifier = Modifier.size(20.dp))
+                                    IconButton(onClick = { viewModel.setFontSize(uiState.fontSizeSp + 2f) }) {
+                                        Icon(Icons.Default.Add, contentDescription = "Increase Font Size", modifier = Modifier.size(16.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -265,6 +278,10 @@ fun WordEditorScreen(
                                             .fillMaxWidth()
                                             .testTag("word_p_input_$index"),
                                         shape = RoundedCornerShape(8.dp),
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            fontSize = uiState.fontSizeSp.sp,
+                                            fontWeight = if (uiState.isBold) FontWeight.Bold else FontWeight.Normal
+                                        ),
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedBorderColor = MaterialTheme.colorScheme.primary,
                                             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
@@ -274,8 +291,8 @@ fun WordEditorScreen(
                                     Text(
                                         text = paragraph.getPlainText(),
                                         style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontSize = 16.sp,
-                                            fontWeight = if (paragraph.isHeader) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = paragraph.runs.firstOrNull()?.style?.fontSizeSp?.sp ?: 16.sp,
+                                            fontWeight = if (paragraph.runs.firstOrNull()?.style?.isBold == true) FontWeight.Bold else if (paragraph.isHeader) FontWeight.Bold else FontWeight.Normal,
                                             textAlign = paragraph.alignment.toComposeTextAlign()
                                         ),
                                         color = MaterialTheme.colorScheme.onSurface,
