@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -239,7 +241,16 @@ fun ExcelEditorScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { scale = (scale * 1.2f).coerceIn(0.5f, 3f) }) {
+                                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { scale = (scale / 1.2f).coerceIn(0.5f, 3f) }) {
+                                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = MaterialTheme.colorScheme.primary)
+                            }
                             IconButton(onClick = viewModel::insertRow) {
                                 Icon(Icons.Default.Add, contentDescription = "Add Row", tint = MaterialTheme.colorScheme.primary)
                             }

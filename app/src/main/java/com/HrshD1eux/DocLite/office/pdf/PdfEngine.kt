@@ -22,40 +22,46 @@ class PdfEngine(private val context: Context) {
         PDFBoxResourceLoader.init(context.applicationContext)
     }
 
+    private val renderLock = Any()
+
     suspend fun openPdf(uri: Uri): Int = withContext(Dispatchers.IO) {
-        close()
-        currentUri = uri
-        try {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd != null) {
-                parcelFileDescriptor = pfd
-                pdfRenderer = PdfRenderer(pfd)
-                pdfRenderer?.pageCount ?: 0
-            } else 0
-        } catch (e: Exception) {
-            e.printStackTrace()
-            0
+        synchronized(renderLock) {
+            closeLocked()
+            currentUri = uri
+            try {
+                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    parcelFileDescriptor = pfd
+                    pdfRenderer = PdfRenderer(pfd)
+                    pdfRenderer?.pageCount ?: 0
+                } else 0
+            } catch (e: Exception) {
+                e.printStackTrace()
+                0
+            }
         }
     }
 
     suspend fun renderPage(pageIndex: Int, targetWidthPx: Int = 1080): Bitmap? = withContext(Dispatchers.IO) {
-        val renderer = pdfRenderer ?: return@withContext null
-        if (pageIndex !in 0 until renderer.pageCount) return@withContext null
+        synchronized(renderLock) {
+            val renderer = pdfRenderer ?: return@synchronized null
+            if (pageIndex !in 0 until renderer.pageCount) return@synchronized null
 
-        try {
-            val page = renderer.openPage(pageIndex)
-            val aspectRatio = page.height.toFloat() / page.width.toFloat()
-            val targetHeightPx = (targetWidthPx * aspectRatio).toInt().coerceAtLeast(100)
+            try {
+                val page = renderer.openPage(pageIndex)
+                val aspectRatio = page.height.toFloat() / page.width.toFloat()
+                val targetHeightPx = (targetWidthPx * aspectRatio).toInt().coerceAtLeast(100)
 
-            val bitmap = Bitmap.createBitmap(targetWidthPx, targetHeightPx, Bitmap.Config.ARGB_8888)
-            bitmap.eraseColor(android.graphics.Color.WHITE)
+                val bitmap = Bitmap.createBitmap(targetWidthPx, targetHeightPx, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
 
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            page.close()
-            bitmap
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+                bitmap
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
         }
     }
 
@@ -98,6 +104,12 @@ class PdfEngine(private val context: Context) {
     }
 
     fun close() {
+        synchronized(renderLock) {
+            closeLocked()
+        }
+    }
+
+    private fun closeLocked() {
         try {
             pdfRenderer?.close()
             pdfRenderer = null

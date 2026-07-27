@@ -213,7 +213,7 @@ class FileRepository(
 
     suspend fun scanAllDocuments(): List<DocumentFile> = withContext(Dispatchers.IO) {
         val appDocsDir = File(context.filesDir, "DocLite_Documents").apply { if (!exists()) mkdirs() }
-        val foundFiles = mutableMapOf<String, File>()
+        val foundFiles = mutableMapOf<String, DocumentFile>()
         
         val protectedUris = try {
             passwordProtectionDao.getAllProtectedUris().first().toSet()
@@ -221,14 +221,6 @@ class FileRepository(
             emptySet()
         }
 
-        // 1. App local documents
-        appDocsDir.listFiles()?.forEach { file ->
-            if (file.isFile) {
-                foundFiles[file.canonicalPath] = file
-            }
-        }
-
-        // 2. Public External Storage
         val allowedExtensions = setOf(
             "doc", "docx", "txt", "rtf",
             "xls", "xlsx", "csv",
@@ -236,6 +228,98 @@ class FileRepository(
             "pdf"
         )
 
+        // 1. App local documents
+        appDocsDir.listFiles()?.forEach { file ->
+            if (file.isFile) {
+                val ext = file.extension.lowercase()
+                if (allowedExtensions.contains(ext)) {
+                    val format = DocumentFormat.fromExtension(ext)
+                    val uriStr = Uri.fromFile(file).toString()
+                    foundFiles[file.canonicalPath] = DocumentFile(
+                        id = uriStr,
+                        name = file.name,
+                        path = file.absolutePath,
+                        uriString = uriStr,
+                        sizeBytes = file.length(),
+                        lastModified = file.lastModified(),
+                        format = format,
+                        isDirectory = false,
+                        isPasswordProtected = protectedUris.contains(uriStr)
+                    )
+                }
+            }
+        }
+
+        // 2. MediaStore Query
+        val projection = arrayOf(
+            android.provider.MediaStore.Files.FileColumns._ID,
+            android.provider.MediaStore.Files.FileColumns.DATA,
+            android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME,
+            android.provider.MediaStore.Files.FileColumns.SIZE,
+            android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED
+        )
+
+        val selection = "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.doc' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.docx' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.xls' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.xlsx' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.csv' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.ppt' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.pptx' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.txt' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.rtf'"
+
+        val sortOrder = "${android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
+        val queryUri = android.provider.MediaStore.Files.getContentUri("external")
+
+        try {
+            context.contentResolver.query(
+                queryUri,
+                projection,
+                selection,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns._ID)
+                val dataCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATA)
+                val nameCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME)
+                val sizeCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.SIZE)
+                val dateModCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED)
+
+                while (cursor.moveToNext()) {
+                    val data = cursor.getString(dataCol) ?: continue
+                    val ext = data.substringAfterLast('.', "").lowercase()
+                    if (!allowedExtensions.contains(ext)) continue
+
+                    val fileObj = File(data)
+                    val canonicalKey = try { fileObj.canonicalPath } catch (e: Exception) { data }
+                    val name = cursor.getString(nameCol) ?: fileObj.name
+                    val size = cursor.getLong(sizeCol)
+                    val dateMod = cursor.getLong(dateModCol) * 1000L
+                    val format = DocumentFormat.fromExtension(ext)
+
+                    // Prefer Uri.fromFile if file exists, otherwise MediaStore content URI
+                    val uriStr = if (fileObj.exists()) Uri.fromFile(fileObj).toString() else android.content.ContentUris.withAppendedId(queryUri, cursor.getLong(idCol)).toString()
+
+                    foundFiles[canonicalKey] = DocumentFile(
+                        id = uriStr,
+                        name = name,
+                        path = data,
+                        uriString = uriStr,
+                        sizeBytes = size,
+                        lastModified = dateMod,
+                        format = format,
+                        isDirectory = false,
+                        isPasswordProtected = protectedUris.contains(uriStr)
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 3. Raw File Recursion for unindexed locations (e.g. downloads, custom folders)
         val visitedDirs = mutableSetOf<String>()
 
         fun scanDir(dir: File, depth: Int = 0) {
@@ -252,7 +336,22 @@ class FileRepository(
                     } else if (file.isFile && file.canRead()) {
                         val ext = file.extension.lowercase()
                         if (allowedExtensions.contains(ext)) {
-                            foundFiles[file.canonicalPath] = file
+                            val cPath = try { file.canonicalPath } catch (e: Exception) { file.absolutePath }
+                            if (!foundFiles.containsKey(cPath)) {
+                                val format = DocumentFormat.fromExtension(ext)
+                                val uriStr = Uri.fromFile(file).toString()
+                                foundFiles[cPath] = DocumentFile(
+                                    id = uriStr,
+                                    name = file.name,
+                                    path = file.absolutePath,
+                                    uriString = uriStr,
+                                    sizeBytes = file.length(),
+                                    lastModified = file.lastModified(),
+                                    format = format,
+                                    isDirectory = false,
+                                    isPasswordProtected = protectedUris.contains(uriStr)
+                                )
+                            }
                         }
                     }
                 }
@@ -272,22 +371,7 @@ class FileRepository(
             scanDir(root, depth = 0)
         }
 
-        foundFiles.values.map { file ->
-            val ext = file.extension.lowercase()
-            val format = DocumentFormat.fromExtension(ext)
-            val uriStr = Uri.fromFile(file).toString()
-            DocumentFile(
-                id = uriStr,
-                name = file.name,
-                path = file.absolutePath,
-                uriString = uriStr,
-                sizeBytes = file.length(),
-                lastModified = file.lastModified(),
-                format = format,
-                isDirectory = file.isDirectory,
-                isPasswordProtected = protectedUris.contains(uriStr)
-            )
-        }.sortedByDescending { it.lastModified }
+        foundFiles.values.sortedByDescending { it.lastModified }
     }
 
     suspend fun listLocalDocuments(directory: File? = null): List<DocumentFile> = withContext(Dispatchers.IO) {
