@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -429,12 +431,14 @@ private fun AnalysisResultView(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Credit Card
                     Card(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.width(140.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -455,7 +459,7 @@ private fun AnalysisResultView(
 
                     // Debit Card
                     Card(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.width(140.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -476,7 +480,7 @@ private fun AnalysisResultView(
 
                     // Net Difference
                     Card(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.width(140.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
                         shape = RoundedCornerShape(12.dp)
                     ) {

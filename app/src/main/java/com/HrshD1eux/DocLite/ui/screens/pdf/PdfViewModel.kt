@@ -41,17 +41,16 @@ class PdfViewModel(
     private val _uiState = MutableStateFlow<PdfUiState>(PdfUiState.Loading)
     val uiState: StateFlow<PdfUiState> = _uiState.asStateFlow()
 
+    private val pageCache = mutableMapOf<Int, Bitmap>()
+
     fun openPdf(uri: Uri) {
         viewModelScope.launch {
             _uiState.value = PdfUiState.Loading
             val pageCount = documentRepository.pdfEngine.openPdf(uri)
             if (pageCount > 0) {
-                val firstPageBitmap = documentRepository.pdfEngine.renderPage(0)
                 _uiState.value = PdfUiState.Success(
                     uri = uri,
-                    pageCount = pageCount,
-                    currentPageIndex = 0,
-                    currentPageBitmap = firstPageBitmap
+                    pageCount = pageCount
                 )
 
                 fileRepository.recordRecentFile(
@@ -74,6 +73,26 @@ class PdfViewModel(
         }
     }
 
+    suspend fun getPage(pageIndex: Int): Bitmap? {
+        if (pageCache.containsKey(pageIndex)) {
+            return pageCache[pageIndex]
+        }
+        val currentState = _uiState.value as? PdfUiState.Success ?: return null
+        if (pageIndex in 0 until currentState.pageCount) {
+            return try {
+                val bitmap = documentRepository.pdfEngine.renderPage(pageIndex)
+                if (bitmap != null) {
+                    pageCache[pageIndex] = bitmap
+                }
+                bitmap
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+        return null
+    }
+
     private fun observeAnnotations(fileUri: String) {
         viewModelScope.launch {
             documentRepository.getPdfAnnotationsFlow(fileUri).collect { annotations ->
@@ -86,13 +105,7 @@ class PdfViewModel(
     fun goToPage(pageIndex: Int) {
         val currentState = _uiState.value as? PdfUiState.Success ?: return
         if (pageIndex in 0 until currentState.pageCount) {
-            viewModelScope.launch {
-                val bitmap = documentRepository.pdfEngine.renderPage(pageIndex)
-                _uiState.value = currentState.copy(
-                    currentPageIndex = pageIndex,
-                    currentPageBitmap = bitmap
-                )
-            }
+            _uiState.value = currentState.copy(currentPageIndex = pageIndex)
         }
     }
 

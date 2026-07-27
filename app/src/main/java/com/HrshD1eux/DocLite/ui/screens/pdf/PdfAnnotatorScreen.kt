@@ -62,6 +62,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.HrshD1eux.DocLite.models.AnnotationType
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.produceState
+import android.graphics.Bitmap
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -204,110 +208,74 @@ fun PdfAnnotatorScreen(
                     }
 
                     // Main PDF Page Viewport Canvas
-                    Box(
+                    LazyColumn(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .padding(12.dp)
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(1f, 5f)
-                                    if (scale > 1f) {
-                                        offset += pan
-                                    } else {
-                                        offset = Offset.Zero
-                                        // Swipe gestures only if not zoomed in
-                                        if (pan.y < -50) { // swipe up
-                                            viewModel.goToPage(uiState.currentPageIndex + 1)
-                                        } else if (pan.y > 50) { // swipe down
-                                            viewModel.goToPage(uiState.currentPageIndex - 1)
-                                        }
-                                    }
-                                }
-                            }
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y
-                            ),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 12.dp)
                     ) {
-                        if (uiState.currentPageBitmap != null) {
-                            Card(
-                                shape = RoundedCornerShape(8.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-                            ) {
-                                Box {
-                                    Image(
-                                        bitmap = uiState.currentPageBitmap.asImageBitmap(),
-                                        contentDescription = "PDF Page ${uiState.currentPageIndex + 1}",
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                        items(uiState.pageCount) { pageIndex ->
+                            val bitmapState = produceState<Bitmap?>(initialValue = null, pageIndex) {
+                                value = viewModel.getPage(pageIndex)
+                            }
 
-                                    // Render Annotation Overlays on top of the rendered PDF page
-                                    uiState.annotations.filter { it.pageIndex == uiState.currentPageIndex }.forEach { ann ->
-                                        if (ann.type == AnnotationType.HIGHLIGHT) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(ann.getComposeColor().copy(alpha = 0.35f))
-                                            )
-                                        } else if (ann.type == AnnotationType.STICKY_NOTE) {
-                                            Surface(
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .padding(16.dp),
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                                shadowElevation = 4.dp
-                                            ) {
-                                                Text(
-                                                    text = ann.noteText,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier.padding(8.dp),
-                                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            if (bitmapState.value != null) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                                ) {
+                                    Box {
+                                        Image(
+                                            bitmap = bitmapState.value!!.asImageBitmap(),
+                                            contentDescription = "PDF Page ${pageIndex + 1}",
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        // Render Annotation Overlays on top of the rendered PDF page
+                                        uiState.annotations.filter { it.pageIndex == pageIndex }.forEach { ann ->
+                                            if (ann.type == AnnotationType.HIGHLIGHT) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(ann.getComposeColor().copy(alpha = 0.35f))
                                                 )
+                                            } else if (ann.type == AnnotationType.STICKY_NOTE) {
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(16.dp),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                                    shadowElevation = 4.dp
+                                                ) {
+                                                    Text(
+                                                        text = ann.noteText,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        modifier = Modifier.padding(8.dp),
+                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(400.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
                             }
-                        } else {
-                            CircularProgressIndicator()
-                        }
-                    }
-
-                    // Page Bottom Navigation Bar
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        tonalElevation = 4.dp
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = { viewModel.goToPage(uiState.currentPageIndex - 1) },
-                                enabled = uiState.currentPageIndex > 0
-                            ) {
-                                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Page")
-                            }
-
-                            Text(
-                                text = "Page ${uiState.currentPageIndex + 1} of ${uiState.pageCount}",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                            )
-
-                            IconButton(
-                                onClick = { viewModel.goToPage(uiState.currentPageIndex + 1) },
-                                enabled = uiState.currentPageIndex < uiState.pageCount - 1
-                            ) {
-                                Icon(Icons.Default.ChevronRight, contentDescription = "Next Page")
+                            
+                            if (pageIndex == uiState.pageCount - 1) {
+                                Spacer(modifier = Modifier.height(12.dp))
                             }
                         }
                     }

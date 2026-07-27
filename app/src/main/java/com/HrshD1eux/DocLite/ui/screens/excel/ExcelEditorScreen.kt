@@ -23,7 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.mutableStateMapOf
@@ -249,16 +250,16 @@ fun ExcelEditorScreen(
                     }
 
                     // Grid View Sheet Canvas
+                    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+                        scale = (scale * zoomChange).coerceIn(0.5f, 3f)
+                        offset += panChange
+                    }
+
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp)
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(0.5f, 3f)
-                                    offset += pan
-                                }
-                            }
+                            .transformable(state = transformableState)
                             .graphicsLayer(
                                 scaleX = scale,
                                 scaleY = scale,
