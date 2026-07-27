@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -25,10 +28,21 @@ android {
 
   signingConfigs {
     create("release") {
-      storeFile = file("${rootDir}/doclite-release-key.jks")
-      storePassword = "doclite123"
-      keyAlias = "doclite"
-      keyPassword = "doclite123"
+      val localPropsFile = project.rootProject.file("local.properties")
+      val localProps = Properties()
+      if (localPropsFile.exists()) {
+          localProps.load(FileInputStream(localPropsFile))
+      }
+
+      val envStoreFile = System.getenv("RELEASE_STORE_FILE")
+      val envStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
+      val envKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+      val envKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+
+      storeFile = if (envStoreFile != null) file(envStoreFile) else file(localProps.getProperty("RELEASE_STORE_FILE") ?: "${rootDir}/doclite-secure.jks")
+      storePassword = envStorePassword ?: localProps.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+      keyAlias = envKeyAlias ?: localProps.getProperty("RELEASE_KEY_ALIAS") ?: ""
+      keyPassword = envKeyPassword ?: localProps.getProperty("RELEASE_KEY_PASSWORD") ?: ""
     }
   }
   buildTypes {
