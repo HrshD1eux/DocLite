@@ -17,18 +17,50 @@ import com.HrshD1eux.DocLite.models.ThemeMode
 import com.HrshD1eux.DocLite.ui.navigation.DocLiteNavigation
 import com.HrshD1eux.DocLite.ui.theme.DocLiteTheme
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
+
 class MainActivity : ComponentActivity() {
+
+    private val _intentDataFlow = MutableStateFlow<Pair<Uri?, DocumentFormat?>>(Pair(null, null))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val app = application as DocLiteApplication
-        var initialIntentUri: Uri? = null
-        var initialIntentFormat: DocumentFormat? = null
+        handleIntent(intent)
 
-        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
-            val uri = intent.data!!
+        setContent {
+            val settings by app.container.settingsRepository.appSettingsFlow.collectAsStateWithLifecycle(
+                initialValue = com.HrshD1eux.DocLite.models.AppSettings()
+            )
+            val intentData by _intentDataFlow.collectAsStateWithLifecycle()
+
+            DocLiteTheme(themeMode = settings.themeMode) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    DocLiteNavigation(
+                        initialIntentUri = intentData.first,
+                        initialIntentFormat = intentData.second
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(incomingIntent: Intent?) {
+        if (incomingIntent?.action == Intent.ACTION_VIEW && incomingIntent.data != null) {
+            val uri = incomingIntent.data!!
             try {
                 if (uri.scheme == "content") {
                     contentResolver.takePersistableUriPermission(
@@ -37,14 +69,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.w("MainActivity", "Could not take persistable permission for $uri", e)
             }
             
-            initialIntentUri = uri
-            
+            var format: DocumentFormat? = null
             val mimeType = contentResolver.getType(uri)
             if (mimeType != null) {
-                initialIntentFormat = when {
+                format = when {
                     mimeType.contains("pdf") -> DocumentFormat.PDF
                     mimeType.contains("word") || mimeType.contains("document") || mimeType.contains("text/plain") -> DocumentFormat.WORD
                     mimeType.contains("excel") || mimeType.contains("sheet") || mimeType.contains("csv") -> DocumentFormat.EXCEL
@@ -54,26 +85,10 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 val ext = uri.path?.substringAfterLast('.', "") ?: ""
-                initialIntentFormat = DocumentFormat.fromExtension(ext)
+                format = DocumentFormat.fromExtension(ext)
             }
-        }
-
-        setContent {
-            val settings by app.container.settingsRepository.appSettingsFlow.collectAsStateWithLifecycle(
-                initialValue = com.HrshD1eux.DocLite.models.AppSettings()
-            )
-
-            DocLiteTheme(themeMode = settings.themeMode) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    DocLiteNavigation(
-                        initialIntentUri = initialIntentUri,
-                        initialIntentFormat = initialIntentFormat
-                    )
-                }
-            }
+            
+            _intentDataFlow.value = Pair(uri, format)
         }
     }
 }

@@ -134,7 +134,29 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val format = DocumentFormat.fromExtension(uri.toString())
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            
+            val mimeType = context.contentResolver.getType(uri)
+            val format = if (mimeType != null) {
+                when {
+                    mimeType.contains("pdf") -> DocumentFormat.PDF
+                    mimeType.contains("word") || mimeType.contains("document") || mimeType.contains("text/plain") -> DocumentFormat.WORD
+                    mimeType.contains("excel") || mimeType.contains("sheet") || mimeType.contains("csv") -> DocumentFormat.EXCEL
+                    mimeType.contains("powerpoint") || mimeType.contains("presentation") -> DocumentFormat.POWERPOINT
+                    mimeType.startsWith("image/") -> DocumentFormat.IMAGE
+                    else -> DocumentFormat.WORD
+                }
+            } else {
+                val ext = uri.path?.substringAfterLast('.', "") ?: ""
+                DocumentFormat.fromExtension(ext)
+            }
             onOpenUri(uri, format)
         }
     }
