@@ -24,6 +24,39 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val app = application as DocLiteApplication
+        var initialIntentUri: Uri? = null
+        var initialIntentFormat: DocumentFormat? = null
+
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            val uri = intent.data!!
+            try {
+                if (uri.scheme == "content") {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            
+            initialIntentUri = uri
+            
+            val mimeType = contentResolver.getType(uri)
+            if (mimeType != null) {
+                initialIntentFormat = when {
+                    mimeType.contains("pdf") -> DocumentFormat.PDF
+                    mimeType.contains("word") || mimeType.contains("document") || mimeType.contains("text/plain") -> DocumentFormat.WORD
+                    mimeType.contains("excel") || mimeType.contains("sheet") || mimeType.contains("csv") -> DocumentFormat.EXCEL
+                    mimeType.contains("powerpoint") || mimeType.contains("presentation") -> DocumentFormat.POWERPOINT
+                    mimeType.startsWith("image/") -> DocumentFormat.IMAGE
+                    else -> DocumentFormat.WORD
+                }
+            } else {
+                val ext = uri.path?.substringAfterLast('.', "") ?: ""
+                initialIntentFormat = DocumentFormat.fromExtension(ext)
+            }
+        }
 
         setContent {
             val settings by app.container.settingsRepository.appSettingsFlow.collectAsStateWithLifecycle(
@@ -35,7 +68,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    DocLiteNavigation()
+                    DocLiteNavigation(
+                        initialIntentUri = initialIntentUri,
+                        initialIntentFormat = initialIntentFormat
+                    )
                 }
             }
         }

@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -58,10 +59,18 @@ object Routes {
 @Composable
 fun DocLiteNavigation(
     navController: NavHostController = rememberNavController(),
+    initialIntentUri: Uri? = null,
+    initialIntentFormat: DocumentFormat? = null,
     modifier: Modifier = Modifier
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Routes.HOME
+
+    LaunchedEffect(initialIntentUri) {
+        if (initialIntentUri != null && initialIntentFormat != null) {
+            navigateToFormatEditor(navController, initialIntentUri, initialIntentFormat)
+        }
+    }
 
     val showBottomNav = currentRoute in listOf(Routes.HOME, Routes.FILE_MANAGER, Routes.SETTINGS)
 

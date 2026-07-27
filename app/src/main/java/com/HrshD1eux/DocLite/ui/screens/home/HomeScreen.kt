@@ -101,15 +101,33 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         val permissionsToRequest = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:${context.packageName}")
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    context.startActivity(intent)
+                }
+            }
+        }
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
             permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
             permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
-        } else {
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        
+        if (permissionsToRequest.isNotEmpty()) {
+            permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        } else {
+            viewModel.refreshScan()
+        }
     }
 
     val filePickerLauncher = rememberLauncherForActivityResult(

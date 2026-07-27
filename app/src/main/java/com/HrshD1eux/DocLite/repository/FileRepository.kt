@@ -349,9 +349,12 @@ class FileRepository(
 
     suspend fun seedInitialSampleDocumentsIfNeeded() = withContext(Dispatchers.IO) {
         val docsDir = File(context.filesDir, "DocLite_Documents")
-        if (!docsDir.exists() || docsDir.listFiles().isNullOrEmpty()) {
-            docsDir.mkdirs()
-
+        if (!docsDir.exists()) docsDir.mkdirs()
+        
+        val markerFile = File(docsDir, ".samples_seeded")
+        if (!markerFile.exists()) {
+            markerFile.createNewFile()
+            
             // Seed Sample Word
             createNewDocument("Project_Proposal_DocLite", DocumentFormat.WORD)
             // Seed Sample Excel
