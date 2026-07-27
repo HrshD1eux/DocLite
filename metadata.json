@@ -1,0 +1,6 @@
+{
+  "name": "DocLite",
+  "description": "Fast, lightweight, 100% offline document viewer, bank statement analyser, and editor for Word, Excel, PowerPoint, PDF, and Images.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
