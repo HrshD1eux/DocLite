@@ -224,7 +224,7 @@ class WordViewModel(
         viewModelScope.launch {
             val formattedName = if (newName.endsWith(".docx", ignoreCase = true)) newName else "$newName.docx"
             val uri = Uri.parse(currentState.document.fileUri)
-            val dummyFile = DocumentFile(
+            val targetFile = DocumentFile(
                 id = currentState.document.fileUri,
                 name = currentState.document.title,
                 path = uri.path ?: "",
@@ -233,7 +233,7 @@ class WordViewModel(
                 lastModified = System.currentTimeMillis(),
                 format = DocumentFormat.WORD
             )
-            val success = fileRepository.renameFile(dummyFile, formattedName)
+            val success = fileRepository.renameFile(targetFile, formattedName)
             if (success) {
                 val oldFile = java.io.File(uri.path ?: "")
                 val newFile = java.io.File(oldFile.parentFile, formattedName)

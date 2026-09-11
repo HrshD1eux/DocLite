@@ -170,7 +170,7 @@ class TextViewModel(
         val currentState = _uiState.value as? TextUiState.Success ?: return
         viewModelScope.launch {
             val formattedName = if (newName.endsWith(".txt", ignoreCase = true)) newName else "$newName.txt"
-            val dummyFile = DocumentFile(
+            val targetFile = DocumentFile(
                 id = currentState.fileUri.toString(),
                 name = currentState.fileName,
                 path = currentState.fileUri.path ?: "",
@@ -179,7 +179,7 @@ class TextViewModel(
                 lastModified = System.currentTimeMillis(),
                 format = DocumentFormat.TXT
             )
-            val success = fileRepository.renameFile(dummyFile, formattedName)
+            val success = fileRepository.renameFile(targetFile, formattedName)
             if (success) {
                 val newFile = File(File(currentState.fileUri.path ?: "").parentFile, formattedName)
                 val newUri = Uri.fromFile(newFile)

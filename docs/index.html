@@ -11,7 +11,7 @@
   <meta name="keywords" content="DocLite, Android office suite, offline office app, bank statement analyzer, offline PDF viewer, docx editor android, xlsx viewer android, private office app, no ads office suite, open source android office" />
   <meta name="author" content="Harsh (HrshD1eux)" />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-  <meta name="theme-color" content="#0d1117" />
+  <meta name="theme-color" content="#ffffff" />
   <link rel="canonical" href="https://hrshd1eux.github.io/DocLite/" />
   
   <!-- Geo-Optimization & Alternate Languages -->
@@ -134,14 +134,20 @@
 
   <style>
     :root {
-      --bg: #090d16;
-      --card-bg: rgba(22, 27, 39, 0.75);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --primary: #3b82f6;
-      --primary-hover: #2563eb;
-      --accent: #10b981;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-subtle: #f1f5f9;
+      --border: #e2e8f0;
+      --border-subtle: #edf2f7;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-subtle: #eff6ff;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-light: #64748b;
+      --accent-green: #059669;
+      --accent-green-bg: #ecfdf5;
+      --accent-red: #dc2626;
       --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
 
@@ -152,14 +158,11 @@
       color: var(--text);
       line-height: 1.6;
       overflow-x: hidden;
-      background-image: 
-        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
-      background-attachment: fixed;
+      -webkit-font-smoothing: antialiased;
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1140px;
       margin: 0 auto;
       padding: 0 1.5rem;
     }
@@ -170,14 +173,14 @@
       top: 0;
       z-index: 50;
       backdrop-filter: blur(12px);
-      background: rgba(9, 13, 22, 0.85);
-      border-bottom: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.9);
+      border-bottom: 1px solid var(--border);
     }
     .nav-inner {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      height: 70px;
+      height: 72px;
     }
     .brand {
       display: flex;
@@ -189,31 +192,36 @@
       font-size: 1.3rem;
     }
     .brand img {
-      width: 40px;
-      height: 40px;
+      width: 42px;
+      height: 42px;
       border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
     }
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 24px;
+      gap: 28px;
     }
     .nav-links a {
       color: var(--text-muted);
       text-decoration: none;
       font-size: 0.95rem;
-      transition: color 0.2s;
+      font-weight: 500;
+      transition: color 0.15s;
     }
-    .nav-links a:hover { color: var(--text); }
+    .nav-links a:hover { color: var(--primary); }
     .btn-nav {
       background: var(--primary);
       color: #fff !important;
-      padding: 8px 16px;
+      padding: 9px 18px;
       border-radius: 8px;
       font-weight: 600;
-      transition: background 0.2s;
+      transition: background 0.15s, transform 0.15s;
     }
-    .btn-nav:hover { background: var(--primary-hover); }
+    .btn-nav:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
 
     /* Hero */
     .hero {
@@ -224,9 +232,9 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: rgba(59, 130, 246, 0.12);
-      border: 1px solid rgba(59, 130, 246, 0.3);
-      color: #60a5fa;
+      background: var(--primary-subtle);
+      border: 1px solid #bfdbfe;
+      color: var(--primary);
       padding: 6px 14px;
       border-radius: 9999px;
       font-size: 0.85rem;
@@ -234,64 +242,53 @@
       margin-bottom: 1.5rem;
     }
     .hero h1 {
-      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-size: clamp(2.4rem, 5vw, 3.8rem);
       font-weight: 800;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.025em;
       line-height: 1.15;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
+      color: var(--text);
     }
     .hero h1 span {
-      background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: var(--primary);
     }
     .hero p {
       font-size: 1.15rem;
       color: var(--text-muted);
-      max-width: 740px;
-      margin: 0 auto 2.5rem;
+      max-width: 720px;
+      margin: 0 auto 2.25rem;
     }
-    .cta-group {
+    .cta-single {
       display: flex;
-      flex-wrap: wrap;
       justify-content: center;
-      gap: 16px;
-      margin-bottom: 2rem;
+      margin-bottom: 1.75rem;
     }
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      padding: 14px 28px;
+      padding: 15px 32px;
       border-radius: 12px;
-      font-size: 1rem;
+      font-size: 1.05rem;
       font-weight: 600;
       text-decoration: none;
       cursor: pointer;
       transition: all 0.2s;
     }
     .btn-primary {
-      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-      color: #fff;
-      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
     }
     .btn-primary:hover {
+      background: var(--primary-hover);
       transform: translateY(-2px);
-      box-shadow: 0 6px 25px rgba(59, 130, 246, 0.6);
-    }
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text);
-      border: 1px solid var(--card-border);
-    }
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.1);
-      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
     }
     .subtext {
       font-size: 0.85rem;
-      color: var(--text-muted);
+      color: var(--text-light);
     }
 
     /* Features Grid */
@@ -302,7 +299,9 @@
     .section-title h2 {
       font-size: 2.2rem;
       font-weight: 700;
+      letter-spacing: -0.02em;
       margin-bottom: 0.75rem;
+      color: var(--text);
     }
     .section-title p {
       color: var(--text-muted);
@@ -315,23 +314,24 @@
       margin-bottom: 5rem;
     }
     .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 28px;
-      backdrop-filter: blur(10px);
-      transition: border-color 0.2s, transform 0.2s;
+      padding: 30px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
     }
     .card:hover {
-      border-color: rgba(96, 165, 250, 0.3);
+      border-color: #cbd5e1;
       transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.06);
     }
     .card-icon {
       width: 48px;
       height: 48px;
       border-radius: 12px;
-      background: rgba(59, 130, 246, 0.15);
-      color: #60a5fa;
+      background: var(--primary-subtle);
+      color: var(--primary);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -342,23 +342,24 @@
       font-size: 1.25rem;
       margin-bottom: 0.5rem;
       font-weight: 600;
+      color: var(--text);
     }
     .card p {
       color: var(--text-muted);
       font-size: 0.95rem;
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     /* Comparison Section */
     .comparison-section {
-      padding: 4rem 0 5rem;
+      padding: 3rem 0 5rem;
     }
     .table-container {
       overflow-x: auto;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 1rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
     }
     table {
       width: 100%;
@@ -367,81 +368,107 @@
     }
     th, td {
       padding: 16px 20px;
-      border-bottom: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--border);
       font-size: 0.95rem;
     }
     th {
       font-weight: 600;
       color: var(--text-muted);
-      background: rgba(255, 255, 255, 0.02);
+      background: var(--surface-subtle);
     }
     th.highlight, td.highlight {
-      background: rgba(59, 130, 246, 0.08);
+      background: var(--primary-subtle);
       font-weight: 600;
-      color: #93c5fd;
+      color: #1e40af;
     }
     tr:last-child td { border-bottom: none; }
-    .check { color: #34d399; font-weight: 700; }
-    .cross { color: #f87171; font-weight: 700; }
+    .check { color: var(--accent-green); font-weight: 700; }
+    .cross { color: var(--accent-red); font-weight: 700; }
 
-    /* Screenshot Gallery */
+    /* Screenshot Showcase */
     .screenshots-section {
       padding: 3rem 0 5rem;
     }
     .gallery-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 20px;
-      min-height: 200px;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 24px;
     }
     .screenshot-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 16px;
       overflow: hidden;
       cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
       transition: transform 0.2s, box-shadow 0.2s;
     }
     .screenshot-card:hover {
-      transform: scale(1.02);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
     }
     .screenshot-card img {
       width: 100%;
       height: auto;
       display: block;
     }
-    .empty-state {
-      grid-column: 1 / -1;
-      padding: 3rem 2rem;
+    .screenshot-caption {
+      padding: 14px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
       text-align: center;
-      background: rgba(255, 255, 255, 0.02);
-      border: 2px dashed var(--card-border);
-      border-radius: 16px;
+      background: var(--surface);
+      border-top: 1px solid var(--border-subtle);
     }
-    .empty-state h4 { font-size: 1.2rem; margin-bottom: 0.5rem; }
-    .empty-state p { color: var(--text-muted); max-width: 550px; margin: 0 auto; }
-    .empty-state code { background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 6px; color: #60a5fa; }
+
+    /* Mockup Showcase Cards (Fallback) */
+    .mock-preview {
+      background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+      height: 380px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .mock-preview-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+    .mock-preview-title {
+      font-weight: 700;
+      color: var(--text);
+      font-size: 1.1rem;
+      margin-bottom: 6px;
+    }
+    .mock-preview-desc {
+      font-size: 0.85rem;
+      color: var(--text-light);
+    }
 
     /* Download Box & QR */
     .download-card {
-      background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      background: #ffffff;
+      border: 1px solid #bfdbfe;
       border-radius: 20px;
       padding: 3.5rem 2rem;
       text-align: center;
       margin: 4rem 0;
-      position: relative;
+      box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08);
     }
     .qr-container {
       display: inline-block;
-      background: #fff;
+      background: #ffffff;
       padding: 12px;
+      border: 1px solid var(--border);
       border-radius: 16px;
       margin: 1.5rem 0;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
-    .qr-container canvas, .qr-container img {
+    .qr-container img {
       display: block;
       width: 140px;
       height: 140px;
@@ -454,11 +481,12 @@
       margin: 0 auto;
     }
     .faq-item {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
       margin-bottom: 1rem;
       overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
     }
     .faq-question {
       padding: 20px 24px;
@@ -469,26 +497,29 @@
       justify-content: space-between;
       align-items: center;
       user-select: none;
+      color: var(--text);
     }
     .faq-answer {
       padding: 0 24px 20px;
       color: var(--text-muted);
       font-size: 0.95rem;
+      line-height: 1.6;
       display: none;
     }
     .faq-item.active .faq-answer { display: block; }
-    .faq-icon { transition: transform 0.2s; }
-    .faq-item.active .faq-icon { transform: rotate(180deg); }
+    .faq-icon { color: var(--text-light); transition: transform 0.2s; font-size: 0.8rem; }
+    .faq-item.active .faq-icon { transform: rotate(180deg); color: var(--primary); }
 
     /* Footer */
     footer {
-      border-top: 1px solid var(--card-border);
+      border-top: 1px solid var(--border);
       padding: 3rem 0 2rem;
       text-align: center;
       color: var(--text-muted);
       font-size: 0.9rem;
+      background: var(--surface);
     }
-    footer a { color: var(--text); text-decoration: none; }
+    footer a { color: var(--primary); text-decoration: none; font-weight: 500; }
     footer a:hover { text-decoration: underline; }
 
     /* Lightbox Modal */
@@ -497,7 +528,7 @@
       position: fixed;
       inset: 0;
       z-index: 100;
-      background: rgba(0, 0, 0, 0.85);
+      background: rgba(15, 23, 42, 0.85);
       backdrop-filter: blur(8px);
       align-items: center;
       justify-content: center;
@@ -508,7 +539,8 @@
       max-width: 90vw;
       max-height: 90vh;
       border-radius: 12px;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+      background: #fff;
     }
     .modal-close {
       position: absolute;
@@ -522,7 +554,6 @@
     @media (max-width: 768px) {
       .nav-links { display: none; }
       .hero { padding: 3rem 0 2rem; }
-      .cta-group { flex-direction: column; }
       .btn { width: 100%; }
       th, td { padding: 12px 10px; font-size: 0.85rem; }
     }
@@ -563,17 +594,14 @@
         Create and edit Word, inspect Excel, view PowerPoint & PDF, and analyze statements on-device with zero cloud exposure.
       </p>
 
-      <div class="cta-group">
+      <!-- Single Primary Download CTA -->
+      <div class="cta-single">
         <a href="https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" class="btn btn-primary" id="heroDownloadBtn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
           Download Latest APK (v1.0.x)
         </a>
-        <a href="https://github.com/HrshD1eux/DocLite" target="_blank" rel="noopener" class="btn btn-secondary">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          Star on GitHub
-        </a>
       </div>
-      <p class="subtext">Android 7.0 (Nougat) to Android 16 • No Root Required • Scoped Storage Compliant</p>
+      <p class="subtext">Compatible with Android 7.0 (Nougat) to Android 16 • No Root Required</p>
     </section>
 
     <!-- Key Features Grid -->
@@ -626,7 +654,7 @@
     <section id="comparison" class="comparison-section container">
       <div class="section-title">
         <h2>How DocLite Compares</h2>
-        <p>A transparent, ruthless comparison with mainstream mobile office apps.</p>
+        <p>A transparent, realistic comparison with mainstream mobile office applications.</p>
       </div>
 
       <div class="table-container">
@@ -642,7 +670,7 @@
           </thead>
           <tbody>
             <tr>
-              <td><strong>100% Offline (No Cloud Account)</strong></td>
+              <td><strong>100% Offline (No Account Required)</strong></td>
               <td class="highlight"><span class="check">✓ Yes</span></td>
               <td><span class="cross">✗ Requires Login</span></td>
               <td><span class="cross">✗ Cloud Push</span></td>
@@ -698,14 +726,46 @@
     <!-- Screenshots Showcase -->
     <section id="screenshots" class="screenshots-section container">
       <div class="section-title">
-        <h2>App Screenshots</h2>
-        <p>Screenshots dropped into the repository's <code>screenshots/</code> folder display here automatically.</p>
+        <h2>App Interface</h2>
+        <p>Explore DocLite's clean, distraction-free design for document editing and financial analytics.</p>
       </div>
 
       <div class="gallery-grid" id="screenshotsGallery">
-        <!-- Dynamically populated via GitHub API -->
-        <div class="empty-state" id="galleryLoadingState">
-          <p>Scanning <code>screenshots/</code> directory for images...</p>
+        <!-- Default feature showcases; dynamic screenshots automatically populate here if uploaded -->
+        <div class="screenshot-card">
+          <div class="mock-preview">
+            <div class="mock-preview-icon">📄</div>
+            <div class="mock-preview-title">Document Editor</div>
+            <div class="mock-preview-desc">Full formatting, font sizes, alignment & rename</div>
+          </div>
+          <div class="screenshot-caption">Word & Plain Text Editor</div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="mock-preview">
+            <div class="mock-preview-icon">🏦</div>
+            <div class="mock-preview-title">Financial Analytics</div>
+            <div class="mock-preview-desc">Inflow, outflow, and automated party cleaning</div>
+          </div>
+          <div class="screenshot-caption">Bank Statement Analyzer</div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="mock-preview">
+            <div class="mock-preview-icon">🔍</div>
+            <div class="mock-preview-title">Drive-Style PDF</div>
+            <div class="mock-preview-desc">Fluid zoom, page jump, and text search</div>
+          </div>
+          <div class="screenshot-caption">High-Fidelity PDF Viewer</div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="mock-preview">
+            <div class="mock-preview-icon">📊</div>
+            <div class="mock-preview-title">Grid Sheet Canvas</div>
+            <div class="mock-preview-desc">Multi-sheet inspection & reactive formula evaluation</div>
+          </div>
+          <div class="screenshot-caption">Excel Spreadsheet Viewer</div>
         </div>
       </div>
     </section>
@@ -713,25 +773,23 @@
     <!-- Direct Download Card -->
     <section id="download" class="container">
       <div class="download-card">
-        <span class="badge">Direct Release APK</span>
-        <h2 style="font-size: 2.2rem; margin-bottom: 1rem;">Get DocLite for Android</h2>
-        <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto 1.5rem;">
-          Download the signed, standalone APK directly to your phone. No Google Play account or sideload permissions required.
+        <span class="badge">Standalone Android APK</span>
+        <h2 style="font-size: 2.2rem; margin-bottom: 0.75rem;">Download DocLite</h2>
+        <p style="color: var(--text-muted); max-width: 580px; margin: 0 auto 1.5rem;">
+          Download the verified release APK directly to your phone. No Google Play account required.
         </p>
 
         <!-- QR Code for Mobile Scanning -->
         <div class="qr-container">
           <img id="qrCodeImg" alt="Scan to download DocLite APK" src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" />
         </div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Scan with your phone camera to download directly</p>
+        <p style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 1.5rem;">Scan with your mobile camera to download directly</p>
 
-        <div class="cta-group">
+        <!-- Single Download CTA Button -->
+        <div class="cta-single">
           <a href="https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" class="btn btn-primary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
             Download app-release.apk
-          </a>
-          <a href="https://github.com/HrshD1eux/DocLite/releases" target="_blank" rel="noopener" class="btn btn-secondary">
-            View All Releases
           </a>
         </div>
       </div>
@@ -808,13 +866,13 @@
       <p style="margin-bottom: 0.5rem;">
         <strong>DocLite</strong> • Developed with privacy by <a href="https://github.com/HrshD1eux" target="_blank" rel="noopener">Harsh (HrshD1eux)</a>
       </p>
-      <p style="font-size: 0.8rem; color: #64748b;">
+      <p style="font-size: 0.85rem; color: #64748b;">
         Licensed under <a href="https://github.com/HrshD1eux/DocLite/blob/main/LICENSE" target="_blank" rel="noopener">GPL-2.0 Non-Commercial</a>. Built for Android 7.0+.
       </p>
     </div>
   </footer>
 
-  <!-- Scripts: Auto Screenshot Loader & FAQ Interactive -->
+  <!-- Scripts: Screenshot Loader & Interactive FAQ -->
   <script>
     // FAQ Accordion Toggle
     document.querySelectorAll('.faq-question').forEach(item => {
@@ -836,7 +894,7 @@
     }
 
     // Dynamic GitHub Screenshot Loader
-    // Automatically scans the 'docs/screenshots' or 'screenshots' folder in the GitHub repo!
+    // Scans 'docs/screenshots' or 'screenshots' in the GitHub repo
     async function loadScreenshots() {
       const gallery = document.getElementById('screenshotsGallery');
       const repoOwner = 'HrshD1eux';
@@ -863,43 +921,26 @@
             }
           }
         } catch (e) {
-          console.warn('Screenshot discovery error for path:', path, e);
+          // Keep default feature showcases on network/rate-limit error
         }
       }
 
-      gallery.innerHTML = '';
-
       if (foundImages.length > 0) {
+        gallery.innerHTML = '';
         foundImages.forEach(file => {
           const card = document.createElement('div');
           card.className = 'screenshot-card';
+          const title = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
           card.innerHTML = `
-            <img src="${file.download_url}" alt="${file.name.replace(/\.[^/.]+$/, '')}" loading="lazy" />
-            <div style="padding: 12px; font-size: 0.85rem; color: #94a3b8; text-align: center;">
-              ${file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')}
-            </div>
+            <img src="${file.download_url}" alt="${title}" loading="lazy" />
+            <div class="screenshot-caption">${title}</div>
           `;
           card.onclick = () => openModal(file.download_url);
           gallery.appendChild(card);
         });
-      } else {
-        // Sleek informative empty state
-        gallery.innerHTML = `
-          <div class="empty-state">
-            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📸</div>
-            <h4>Automatic Screenshot Sync Active</h4>
-            <p style="margin-bottom: 1rem;">
-              Drop any screenshot (<code>.png</code>, <code>.webp</code>, <code>.jpg</code>) into the <code>screenshots/</code> or <code>docs/screenshots/</code> folder in the repository.
-            </p>
-            <p style="font-size: 0.85rem; color: #64748b;">
-              The landing page queries the GitHub API on load and will automatically display all added images here without manual HTML editing.
-            </p>
-          </div>
-        `;
       }
     }
 
-    // Initialize screenshot scan
     loadScreenshots();
   </script>
 </body>
