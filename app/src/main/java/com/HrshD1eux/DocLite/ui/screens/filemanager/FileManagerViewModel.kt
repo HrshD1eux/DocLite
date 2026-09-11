@@ -31,51 +31,57 @@ class FileManagerViewModel(
     private val _uiState = MutableStateFlow<FileManagerUiState>(FileManagerUiState.Loading)
     val uiState: StateFlow<FileManagerUiState> = _uiState.asStateFlow()
 
+    private var cachedFiles: List<DocumentFile> = emptyList()
+
     init {
         loadFiles()
     }
 
     fun loadFiles() {
         viewModelScope.launch {
-            val rawFiles = fileRepository.listLocalDocuments()
-            val currentState = _uiState.value as? FileManagerUiState.Success
-            val query = currentState?.searchQuery ?: ""
-            val sort = currentState?.currentSort ?: SortOption.DATE
-            val asc = currentState?.isAscending ?: false
-
-            val filtered = filterAndSortFiles(rawFiles, query, sort, asc)
-            _uiState.value = FileManagerUiState.Success(
-                files = filtered,
-                searchQuery = query,
-                currentSort = sort,
-                isAscending = asc
-            )
+            reloadFilesInternal()
         }
+    }
+
+    private suspend fun reloadFilesInternal() {
+        val rawFiles = fileRepository.listLocalDocuments()
+        cachedFiles = rawFiles
+        val currentState = _uiState.value as? FileManagerUiState.Success
+        val query = currentState?.searchQuery ?: ""
+        val sort = currentState?.currentSort ?: SortOption.DATE
+        val asc = currentState?.isAscending ?: false
+
+        val filtered = filterAndSortFiles(cachedFiles, query, sort, asc)
+        _uiState.value = FileManagerUiState.Success(
+            files = filtered,
+            searchQuery = query,
+            currentSort = sort,
+            isAscending = asc,
+            actionMessage = currentState?.actionMessage
+        )
+    }
+
+    fun refresh() {
+        loadFiles()
     }
 
     fun updateSearchQuery(query: String) {
         val currentState = _uiState.value as? FileManagerUiState.Success ?: return
-        viewModelScope.launch {
-            val rawFiles = fileRepository.listLocalDocuments()
-            val filtered = filterAndSortFiles(rawFiles, query, currentState.currentSort, currentState.isAscending)
-            _uiState.value = currentState.copy(files = filtered, searchQuery = query)
-        }
+        val filtered = filterAndSortFiles(cachedFiles, query, currentState.currentSort, currentState.isAscending)
+        _uiState.value = currentState.copy(files = filtered, searchQuery = query)
     }
 
     fun setSortOption(sortOption: SortOption) {
         val currentState = _uiState.value as? FileManagerUiState.Success ?: return
         val newAsc = if (currentState.currentSort == sortOption) !currentState.isAscending else false
-        viewModelScope.launch {
-            val rawFiles = fileRepository.listLocalDocuments()
-            val filtered = filterAndSortFiles(rawFiles, currentState.searchQuery, sortOption, newAsc)
-            _uiState.value = currentState.copy(files = filtered, currentSort = sortOption, isAscending = newAsc)
-        }
+        val filtered = filterAndSortFiles(cachedFiles, currentState.searchQuery, sortOption, newAsc)
+        _uiState.value = currentState.copy(files = filtered, currentSort = sortOption, isAscending = newAsc)
     }
 
     fun renameFile(file: DocumentFile, newName: String) {
         viewModelScope.launch {
             val success = fileRepository.renameFile(file, newName)
-            loadFiles()
+            reloadFilesInternal()
             val currentState = _uiState.value as? FileManagerUiState.Success
             if (currentState != null) {
                 _uiState.value = currentState.copy(
@@ -88,7 +94,7 @@ class FileManagerViewModel(
     fun deleteFile(file: DocumentFile) {
         viewModelScope.launch {
             val success = fileRepository.deleteFile(file)
-            loadFiles()
+            reloadFilesInternal()
             val currentState = _uiState.value as? FileManagerUiState.Success
             if (currentState != null) {
                 _uiState.value = currentState.copy(
@@ -101,14 +107,14 @@ class FileManagerViewModel(
     fun toggleFavorite(file: DocumentFile) {
         viewModelScope.launch {
             fileRepository.toggleFavorite(file)
-            loadFiles()
+            reloadFilesInternal()
         }
     }
 
     fun setFilePassword(file: DocumentFile, password: String) {
         viewModelScope.launch {
             fileRepository.setFilePassword(file.uriString, password)
-            loadFiles()
+            reloadFilesInternal()
             val currentState = _uiState.value as? FileManagerUiState.Success
             if (currentState != null) {
                 _uiState.value = currentState.copy(actionMessage = "Password protected successfully")
@@ -119,7 +125,7 @@ class FileManagerViewModel(
     fun removeFilePassword(file: DocumentFile) {
         viewModelScope.launch {
             fileRepository.removeFilePassword(file.uriString)
-            loadFiles()
+            reloadFilesInternal()
             val currentState = _uiState.value as? FileManagerUiState.Success
             if (currentState != null) {
                 _uiState.value = currentState.copy(actionMessage = "Password protection removed")

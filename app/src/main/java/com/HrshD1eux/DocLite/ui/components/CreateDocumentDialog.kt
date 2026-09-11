@@ -84,6 +84,7 @@ fun CreateDocumentDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val formats = listOf(
                         DocumentFormat.WORD,
+                        DocumentFormat.TXT,
                         DocumentFormat.EXCEL,
                         DocumentFormat.POWERPOINT
                     )

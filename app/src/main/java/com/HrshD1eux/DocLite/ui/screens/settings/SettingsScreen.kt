@@ -49,11 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.HrshD1eux.DocLite.models.FontSizeMode
 import com.HrshD1eux.DocLite.models.StartScreen
 import com.HrshD1eux.DocLite.models.ThemeMode
-import com.HrshD1eux.DocLite.updater.AppUpdater
 import kotlinx.coroutines.launch
-
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material3.OutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,7 +142,7 @@ fun SettingsScreen(
                 }
             }
 
-            // Auto Save & Data Management
+            // Preferences & Data
             item {
                 Text(
                     text = "Preferences & Data",
@@ -162,22 +158,39 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Home, contentDescription = "Start Screen", tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Default Start Screen", style = MaterialTheme.typography.titleMedium)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Save, contentDescription = "Auto Save", tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text("Auto Save Documents", style = MaterialTheme.typography.titleMedium)
+                            listOf(StartScreen.HOME, StartScreen.FILE_MANAGER).forEach { screen ->
+                                val isSelected = settings.startScreen == screen
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 4.dp)
+                                        .clickable { viewModel.setStartScreen(screen) }
+                                        .testTag("start_${screen.name.lowercase()}"),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = screen.label,
+                                        modifier = Modifier.padding(10.dp),
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        ),
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-
-                            Switch(
-                                checked = settings.isAutoSaveEnabled,
-                                onCheckedChange = viewModel::setAutoSave,
-                                modifier = Modifier.testTag("auto_save_switch")
-                            )
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -236,31 +249,6 @@ fun SettingsScreen(
                             Icon(Icons.Default.Info, contentDescription = "Info", tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text("Version ${com.HrshD1eux.DocLite.BuildConfig.VERSION_NAME} (DocLite Core)", style = MaterialTheme.typography.bodyMedium)
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    val updater = AppUpdater(context)
-                                    snackbarHostState.showSnackbar("Checking for updates...")
-                                    val updateInfo = updater.checkForUpdate()
-                                    if (updateInfo != null) {
-                                        snackbarHostState.showSnackbar("Update found: ${updateInfo.version}. Downloading...")
-                                        updater.downloadAndInstall(updateInfo)
-                                    } else {
-                                        snackbarHostState.showSnackbar("DocLite is up to date!")
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("check_for_updates_button")
-                        ) {
-                            Icon(Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Check for Update")
                         }
                     }
                 }

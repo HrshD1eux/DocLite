@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.HrshD1eux.DocLite.models.DocumentFile
+import com.HrshD1eux.DocLite.models.DocumentFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,6 +54,7 @@ fun FileCardItem(
     onDeleteClick: () -> Unit,
     onShareClick: () -> Unit,
     onProtectClick: () -> Unit,
+    onAnalyzeStatement: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -162,6 +164,15 @@ fun FileCardItem(
                             onProtectClick()
                         }
                     )
+                    if (onAnalyzeStatement != null && (file.format == DocumentFormat.EXCEL || file.format == DocumentFormat.PDF || file.name.endsWith(".csv", ignoreCase = true))) {
+                        DropdownMenuItem(
+                            text = { Text("Analyze Bank Statement") },
+                            onClick = {
+                                showMenu = false
+                                onAnalyzeStatement()
+                            }
+                        )
+                    }
                 }
             }
         }

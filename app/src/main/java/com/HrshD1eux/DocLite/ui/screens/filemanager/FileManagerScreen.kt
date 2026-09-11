@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,6 +57,7 @@ import com.HrshD1eux.DocLite.ui.components.SetPasswordDialog
 fun FileManagerScreen(
     viewModel: FileManagerViewModel,
     onOpenFile: (DocumentFile) -> Unit,
+    onAnalyzeStatement: (DocumentFile) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -187,7 +188,7 @@ fun FileManagerScreen(
                 actions = {
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort Files", tint = Color(0xFF40484B))
+                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort Files", tint = Color(0xFF40484B))
                         }
 
                         DropdownMenu(
@@ -271,7 +272,7 @@ fun FileManagerScreen(
                             AssistChip(
                                 onClick = { showSortMenu = true },
                                 label = { Text("Sort: ${uiState.currentSort.name}") },
-                                leadingIcon = { Icon(Icons.Default.Sort, contentDescription = "Sort") }
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort") }
                             )
                         }
                     }
@@ -303,7 +304,8 @@ fun FileManagerScreen(
                                 },
                                 onDeleteClick = { viewModel.deleteFile(file) },
                                 onShareClick = { shareFile(file) },
-                                onProtectClick = { selectedFileForPasswordSet = file }
+                                onProtectClick = { selectedFileForPasswordSet = file },
+                                onAnalyzeStatement = { onAnalyzeStatement(file) }
                             )
                         }
                     }

@@ -80,6 +80,7 @@ data class Sheet(
 data class SpreadsheetDocument(
     val title: String,
     val fileUri: String,
-    val sheets: List<Sheet> = listOf(Sheet(name = "Sheet1"))
+    val sheets: List<Sheet> = listOf(Sheet(name = "Sheet1")),
+    val hasUnrecognizedElements: Boolean = false
 )
 

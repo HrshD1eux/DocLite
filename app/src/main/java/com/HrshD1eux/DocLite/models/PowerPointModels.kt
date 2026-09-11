@@ -29,6 +29,7 @@ data class Slide(
 data class PresentationDocument(
     val title: String,
     val fileUri: String,
-    val slides: List<Slide> = listOf(Slide(slideNumber = 1))
+    val slides: List<Slide> = listOf(Slide(slideNumber = 1)),
+    val hasUnrecognizedElements: Boolean = false
 )
 

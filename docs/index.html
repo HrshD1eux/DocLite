@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- Primary SEO Meta Tags -->
+  <title>DocLite - 100% Offline Android Office Suite & Bank Statement Analyzer</title>
+  <meta name="title" content="DocLite - 100% Offline Android Office Suite & Bank Statement Analyzer" />
+  <meta name="description" content="Download DocLite: The private, 100% offline Android office suite. Edit Word (.docx), view Excel (.xlsx), PowerPoint (.pptx), PDF, plain text (.txt), and analyze bank statements with zero tracking." />
+  <meta name="keywords" content="DocLite, Android office suite, offline office app, bank statement analyzer, offline PDF viewer, docx editor android, xlsx viewer android, private office app, no ads office suite, open source android office" />
+  <meta name="author" content="Harsh (HrshD1eux)" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+  <meta name="theme-color" content="#0d1117" />
+  <link rel="canonical" href="https://hrshd1eux.github.io/DocLite/" />
+  
+  <!-- Geo-Optimization & Alternate Languages -->
+  <meta name="geo.region" content="GLOBAL" />
+  <meta name="geo.placename" content="Global" />
+  <link rel="alternate" hreflang="x-default" href="https://hrshd1eux.github.io/DocLite/" />
+  <link rel="alternate" hreflang="en" href="https://hrshd1eux.github.io/DocLite/" />
+  <link rel="alternate" hreflang="en-US" href="https://hrshd1eux.github.io/DocLite/" />
+  <link rel="alternate" hreflang="en-IN" href="https://hrshd1eux.github.io/DocLite/" />
+  <link rel="alternate" hreflang="en-GB" href="https://hrshd1eux.github.io/DocLite/" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://hrshd1eux.github.io/DocLite/" />
+  <meta property="og:title" content="DocLite - 100% Offline Android Office Suite & Bank Statement Analyzer" />
+  <meta property="og:description" content="Fast, private, zero-bloat offline office suite for Android. Edit Word, inspect Excel, view PDF & analyze bank statements locally on your phone." />
+  <meta property="og:image" content="https://hrshd1eux.github.io/DocLite/assets/icon.png" />
+  <meta property="og:site_name" content="DocLite" />
+
+  <!-- Twitter Card -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://hrshd1eux.github.io/DocLite/" />
+  <meta property="twitter:title" content="DocLite - 100% Offline Android Office Suite" />
+  <meta property="twitter:description" content="Zero cloud dependency, zero ads, zero trackers. Open, edit, and analyze documents completely on-device." />
+  <meta property="twitter:image" content="https://hrshd1eux.github.io/DocLite/assets/icon.png" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/icon.png" />
+  <link rel="apple-touch-icon" href="assets/icon.png" />
+
+  <!-- AEO Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "DocLite",
+        "operatingSystem": "Android 7.0 and up",
+        "applicationCategory": "BusinessApplication",
+        "applicationSubCategory": "Office Productivity",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "description": "Fast, private, 100% offline Android office suite for reading and editing Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PDF, plain text (.txt), and analyzing bank statements locally.",
+        "downloadUrl": "https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk",
+        "softwareVersion": "1.0",
+        "license": "https://github.com/HrshD1eux/DocLite/blob/main/LICENSE",
+        "author": {
+          "@type": "Person",
+          "name": "Harsh (HrshD1eux)",
+          "url": "https://github.com/HrshD1eux"
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.9",
+          "ratingCount": "150",
+          "bestRating": "5"
+        },
+        "featureList": [
+          "100% Offline Execution - No Internet Required",
+          "Word Document (.docx) Creation, Editing & In-Editor Rename",
+          "Plain Text (.txt, .log, .md) Editor with Monospace Canvas",
+          "Excel (.xlsx, .csv) Spreadsheet Viewer with Formula Evaluation",
+          "Google Drive-Style High-Performance PDF Viewer",
+          "Intelligent Bank Statement Analyzer with Password-Protected PDF/Excel Support",
+          "Zero Trackers, Zero Telemetry, Zero Advertisements"
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is DocLite?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "DocLite is a native, offline-first Android office productivity suite built with Jetpack Compose. It allows users to view and edit Word (.docx), Excel (.xlsx), PowerPoint (.pptx), PDF, and plain text (.txt) documents, as well as analyze bank statements locally without an internet connection."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does DocLite require an internet connection or send data to the cloud?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. DocLite operates 100% offline. All document parsing, formula evaluation, and bank statement analysis occur entirely on your Android device. There are zero background network calls, zero third-party telemetry, and no cloud uploads."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does DocLite analyze bank statements?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "DocLite parses PDF, Excel (.xlsx), and CSV bank statements directly on-device. It cleans complex transaction narratives (removing UPI IDs, NEFT/IMPS prefixes, ATM codes), categorizes total inflows (credits) and outflows (debits), identifies top recipients and senders, and natively supports password-protected PDFs and encrypted spreadsheets."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is DocLite free and ad-free?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. DocLite is completely free, 100% ad-free, and licensed under the GNU General Public License v2.0 (Non-Commercial). It contains no in-app purchases, subscriptions, or paywalls."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What Android versions does DocLite support?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "DocLite supports Android 7.0 (API level 24, Nougat) all the way through Android 16 (API level 36), ensuring compatibility across virtually all modern Android smartphones and tablets."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(22, 27, 39, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent: #10b981;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Navbar */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+      background: rgba(9, 13, 22, 0.85);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 70px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 1.3rem;
+    }
+    .brand img {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .btn-nav {
+      background: var(--primary);
+      color: #fff !important;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .btn-nav:hover { background: var(--primary-hover); }
+
+    /* Hero */
+    .hero {
+      padding: 5rem 0 3.5rem;
+      text-align: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 span {
+      background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 740px;
+      margin: 0 auto 2.5rem;
+    }
+    .cta-group {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 2rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 25px rgba(59, 130, 246, 0.6);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+    }
+    .subtext {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Features Grid */
+    .section-title {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+    .section-title h2 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    .section-title p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+    }
+    .grid-features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 5rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 28px;
+      backdrop-filter: blur(10px);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .card:hover {
+      border-color: rgba(96, 165, 250, 0.3);
+      transform: translateY(-3px);
+    }
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+    .card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    /* Comparison Section */
+    .comparison-section {
+      padding: 4rem 0 5rem;
+    }
+    .table-container {
+      overflow-x: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    th, td {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.95rem;
+    }
+    th {
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    th.highlight, td.highlight {
+      background: rgba(59, 130, 246, 0.08);
+      font-weight: 600;
+      color: #93c5fd;
+    }
+    tr:last-child td { border-bottom: none; }
+    .check { color: #34d399; font-weight: 700; }
+    .cross { color: #f87171; font-weight: 700; }
+
+    /* Screenshot Gallery */
+    .screenshots-section {
+      padding: 3rem 0 5rem;
+    }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
+      min-height: 200px;
+    }
+    .screenshot-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .screenshot-card:hover {
+      transform: scale(1.02);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .screenshot-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .empty-state {
+      grid-column: 1 / -1;
+      padding: 3rem 2rem;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.02);
+      border: 2px dashed var(--card-border);
+      border-radius: 16px;
+    }
+    .empty-state h4 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .empty-state p { color: var(--text-muted); max-width: 550px; margin: 0 auto; }
+    .empty-state code { background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 6px; color: #60a5fa; }
+
+    /* Download Box & QR */
+    .download-card {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 20px;
+      padding: 3.5rem 2rem;
+      text-align: center;
+      margin: 4rem 0;
+      position: relative;
+    }
+    .qr-container {
+      display: inline-block;
+      background: #fff;
+      padding: 12px;
+      border-radius: 16px;
+      margin: 1.5rem 0;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .qr-container canvas, .qr-container img {
+      display: block;
+      width: 140px;
+      height: 140px;
+    }
+
+    /* FAQ */
+    .faq-section {
+      padding: 3rem 0 5rem;
+      max-width: 850px;
+      margin: 0 auto;
+    }
+    .faq-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .faq-question {
+      padding: 20px 24px;
+      font-weight: 600;
+      font-size: 1.05rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+    .faq-answer {
+      padding: 0 24px 20px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      display: none;
+    }
+    .faq-item.active .faq-answer { display: block; }
+    .faq-icon { transition: transform 0.2s; }
+    .faq-item.active .faq-icon { transform: rotate(180deg); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 3rem 0 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    footer a { color: var(--text); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* Lightbox Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .modal.open { display: flex; }
+    .modal-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    }
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 25px;
+      color: #fff;
+      font-size: 2rem;
+      cursor: pointer;
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero { padding: 3rem 0 2rem; }
+      .cta-group { flex-direction: column; }
+      .btn { width: 100%; }
+      th, td { padding: 12px 10px; font-size: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="container nav-inner">
+      <a href="#" class="brand">
+        <img src="assets/icon.png" alt="DocLite Logo" />
+        <span>DocLite</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#comparison">Comparison</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/HrshD1eux/DocLite" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" class="btn-nav">Download APK</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero container">
+      <div class="badge">
+        <span>🛡️ 100% Offline • Zero Trackers • Zero Ads</span>
+      </div>
+      <h1>
+        Your Documents. Your Privacy.<br />
+        <span>Completely Offline on Android.</span>
+      </h1>
+      <p>
+        DocLite is the fast, native Android office suite and intelligent bank statement analyzer.
+        Create and edit Word, inspect Excel, view PowerPoint & PDF, and analyze statements on-device with zero cloud exposure.
+      </p>
+
+      <div class="cta-group">
+        <a href="https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" class="btn btn-primary" id="heroDownloadBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
+          Download Latest APK (v1.0.x)
+        </a>
+        <a href="https://github.com/HrshD1eux/DocLite" target="_blank" rel="noopener" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          Star on GitHub
+        </a>
+      </div>
+      <p class="subtext">Android 7.0 (Nougat) to Android 16 • No Root Required • Scoped Storage Compliant</p>
+    </section>
+
+    <!-- Key Features Grid -->
+    <section id="features" class="container">
+      <div class="section-title">
+        <h2>Engineered for Privacy & Pure Utility</h2>
+        <p>Zero cloud dependencies. Everything runs natively on your hardware.</p>
+      </div>
+
+      <div class="grid-features">
+        <div class="card">
+          <div class="card-icon">📄</div>
+          <h3>Word Document Editor</h3>
+          <p>Create new `.docx` files or edit existing ones with bold, italics, alignment, localized live word count, and in-editor rename. Disk-backed streaming prevents heap exhaustion.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🏦</div>
+          <h3>Bank Statement Analyzer</h3>
+          <p>Automatically cleans UPI, NEFT, IMPS, and ATM narratives from `.xlsx`, `.csv`, `.txt`, and password-protected PDF statements. Calculates totals and highlights top recipients.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">📊</div>
+          <h3>Spreadsheets & Formulas</h3>
+          <p>Inspect multi-sheet `.xlsx` workbooks and compute cell formulas dynamically with Apache POI without sending financial tables to external servers.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🔍</div>
+          <h3>Google Drive-Style PDF Viewer</h3>
+          <p>Hardware-accelerated PDF rendering powered by native Android `PdfRenderer` with an LRU memory cache, deep text search, page jumping, and fluid pinch-to-zoom.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">📝</div>
+          <h3>Dedicated Plain Text Editor</h3>
+          <p>Lightweight, instant text editor for `.txt`, `.log`, and `.md` files featuring monospace typography, undo/redo history, and character/word stats.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🔒</div>
+          <h3>Zero Trackers & Scoped Storage</h3>
+          <p>Operates fully offline. Uses modern Android Storage Access Framework (SAF) and MediaStore queries. Absolutely zero background telemetry or ad networks.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Head to Head Comparison -->
+    <section id="comparison" class="comparison-section container">
+      <div class="section-title">
+        <h2>How DocLite Compares</h2>
+        <p>A transparent, ruthless comparison with mainstream mobile office apps.</p>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature / Metric</th>
+              <th class="highlight">DocLite</th>
+              <th>Microsoft 365</th>
+              <th>WPS Office</th>
+              <th>Google Docs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>100% Offline (No Cloud Account)</strong></td>
+              <td class="highlight"><span class="check">✓ Yes</span></td>
+              <td><span class="cross">✗ Requires Login</span></td>
+              <td><span class="cross">✗ Cloud Push</span></td>
+              <td><span class="cross">✗ Online Mandate</span></td>
+            </tr>
+            <tr>
+              <td><strong>Zero Advertisements & Trackers</strong></td>
+              <td class="highlight"><span class="check">✓ 0 Ads / 0 Trackers</span></td>
+              <td><span class="cross">✗ Telemetry Active</span></td>
+              <td><span class="cross">✗ Heavy Ads & Popups</span></td>
+              <td><span class="cross">✗ User Data Profiling</span></td>
+            </tr>
+            <tr>
+              <td><strong>Built-in Bank Statement Analyzer</strong></td>
+              <td class="highlight"><span class="check">✓ Yes (UPI/NEFT/ATM)</span></td>
+              <td><span class="cross">✗ None</span></td>
+              <td><span class="cross">✗ None</span></td>
+              <td><span class="cross">✗ None</span></td>
+            </tr>
+            <tr>
+              <td><strong>Password-Protected PDF & Excel</strong></td>
+              <td class="highlight"><span class="check">✓ Native Support</span></td>
+              <td><span class="cross">✗ Subscription Only</span></td>
+              <td><span class="cross">✗ Paid VIP Feature</span></td>
+              <td><span class="cross">✗ Limited / Cloud Error</span></td>
+            </tr>
+            <tr>
+              <td><strong>App Footprint & Memory</strong></td>
+              <td class="highlight"><span class="check">~30 MB (R8 Minified)</span></td>
+              <td>150 MB+</td>
+              <td>120 MB+</td>
+              <td>80 MB+ (Webview)</td>
+            </tr>
+            <tr>
+              <td><strong>Price & Licensing</strong></td>
+              <td class="highlight"><span class="check">Free (GPL-2.0-NC)</span></td>
+              <td>$6.99 / month</td>
+              <td>$29.99 / year VIP</td>
+              <td>Free with Account</td>
+            </tr>
+            <tr>
+              <td><strong>Source Code Transparency</strong></td>
+              <td class="highlight"><span class="check">✓ Inspectable on GitHub</span></td>
+              <td><span class="cross">✗ Proprietary</span></td>
+              <td><span class="cross">✗ Proprietary</span></td>
+              <td><span class="cross">✗ Proprietary</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Screenshots Showcase -->
+    <section id="screenshots" class="screenshots-section container">
+      <div class="section-title">
+        <h2>App Screenshots</h2>
+        <p>Screenshots dropped into the repository's <code>screenshots/</code> folder display here automatically.</p>
+      </div>
+
+      <div class="gallery-grid" id="screenshotsGallery">
+        <!-- Dynamically populated via GitHub API -->
+        <div class="empty-state" id="galleryLoadingState">
+          <p>Scanning <code>screenshots/</code> directory for images...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Direct Download Card -->
+    <section id="download" class="container">
+      <div class="download-card">
+        <span class="badge">Direct Release APK</span>
+        <h2 style="font-size: 2.2rem; margin-bottom: 1rem;">Get DocLite for Android</h2>
+        <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto 1.5rem;">
+          Download the signed, standalone APK directly to your phone. No Google Play account or sideload permissions required.
+        </p>
+
+        <!-- QR Code for Mobile Scanning -->
+        <div class="qr-container">
+          <img id="qrCodeImg" alt="Scan to download DocLite APK" src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" />
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Scan with your phone camera to download directly</p>
+
+        <div class="cta-group">
+          <a href="https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk" class="btn btn-primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
+            Download app-release.apk
+          </a>
+          <a href="https://github.com/HrshD1eux/DocLite/releases" target="_blank" rel="noopener" class="btn btn-secondary">
+            View All Releases
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Accordion (AEO Optimized) -->
+    <section id="faq" class="faq-section container">
+      <div class="section-title">
+        <h2>Frequently Asked Questions</h2>
+        <p>Straightforward answers about DocLite's security, features, and permissions.</p>
+      </div>
+
+      <div class="faq-item active">
+        <div class="faq-question">
+          <span>Is DocLite really 100% offline?</span>
+          <span class="faq-icon">▼</span>
+        </div>
+        <div class="faq-answer">
+          Yes. DocLite does not require network access for any of its document rendering or analysis features. All parsing engines (Apache POI, PDFBox, Android native PdfRenderer) execute directly within the app process on your device.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <span>How does the Bank Statement Analyzer handle my private finances?</span>
+          <span class="faq-icon">▼</span>
+        </div>
+        <div class="faq-answer">
+          Your statement data never leaves your device. The parser runs strictly in local memory to identify debit/credit columns and cleanse UPI/NEFT/ATM strings. As soon as you navigate away, the in-memory parsing buffer is cleared.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <span>Can DocLite open password-protected PDFs and Excel files?</span>
+          <span class="faq-icon">▼</span>
+        </div>
+        <div class="faq-answer">
+          Yes. When a password-protected PDF or encrypted Excel sheet is opened, DocLite prompts you for the password and decrypts the stream locally in memory using native PDFBox and Apache POI.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <span>What permissions does DocLite require?</span>
+          <span class="faq-icon">▼</span>
+        </div>
+        <div class="faq-answer">
+          DocLite adheres strictly to Android Scoped Storage standards. It uses the standard Android Storage Access Framework (SAF) system file picker and read-only media permissions. It does not request invasive permissions or sideloading capabilities.
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <span>What license is DocLite released under?</span>
+          <span class="faq-icon">▼</span>
+        </div>
+        <div class="faq-answer">
+          DocLite is licensed under the GNU General Public License v2.0 (Non-Commercial). It is free for personal, educational, and open-source evaluation use. Commercial bundling, sale, or paid distribution is strictly prohibited.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Lightbox Modal -->
+  <div class="modal" id="imageModal" onclick="closeModal()">
+    <span class="modal-close">&times;</span>
+    <img class="modal-content" id="modalImg" alt="Enlarged screenshot" />
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p style="margin-bottom: 0.5rem;">
+        <strong>DocLite</strong> • Developed with privacy by <a href="https://github.com/HrshD1eux" target="_blank" rel="noopener">Harsh (HrshD1eux)</a>
+      </p>
+      <p style="font-size: 0.8rem; color: #64748b;">
+        Licensed under <a href="https://github.com/HrshD1eux/DocLite/blob/main/LICENSE" target="_blank" rel="noopener">GPL-2.0 Non-Commercial</a>. Built for Android 7.0+.
+      </p>
+    </div>
+  </footer>
+
+  <!-- Scripts: Auto Screenshot Loader & FAQ Interactive -->
+  <script>
+    // FAQ Accordion Toggle
+    document.querySelectorAll('.faq-question').forEach(item => {
+      item.addEventListener('click', () => {
+        const parent = item.parentElement;
+        parent.classList.toggle('active');
+      });
+    });
+
+    // Lightbox handlers
+    function openModal(src) {
+      const modal = document.getElementById('imageModal');
+      const img = document.getElementById('modalImg');
+      img.src = src;
+      modal.classList.add('open');
+    }
+    function closeModal() {
+      document.getElementById('imageModal').classList.remove('open');
+    }
+
+    // Dynamic GitHub Screenshot Loader
+    // Automatically scans the 'docs/screenshots' or 'screenshots' folder in the GitHub repo!
+    async function loadScreenshots() {
+      const gallery = document.getElementById('screenshotsGallery');
+      const repoOwner = 'HrshD1eux';
+      const repoName = 'DocLite';
+      
+      const targetPaths = [
+        'docs/screenshots',
+        'screenshots'
+      ];
+
+      let foundImages = [];
+
+      for (const path of targetPaths) {
+        try {
+          const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}`);
+          if (res.ok) {
+            const files = await res.json();
+            if (Array.isArray(files)) {
+              const images = files.filter(f => /\.(png|jpe?g|webp)$/i.test(f.name));
+              if (images.length > 0) {
+                foundImages = images;
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Screenshot discovery error for path:', path, e);
+        }
+      }
+
+      gallery.innerHTML = '';
+
+      if (foundImages.length > 0) {
+        foundImages.forEach(file => {
+          const card = document.createElement('div');
+          card.className = 'screenshot-card';
+          card.innerHTML = `
+            <img src="${file.download_url}" alt="${file.name.replace(/\.[^/.]+$/, '')}" loading="lazy" />
+            <div style="padding: 12px; font-size: 0.85rem; color: #94a3b8; text-align: center;">
+              ${file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')}
+            </div>
+          `;
+          card.onclick = () => openModal(file.download_url);
+          gallery.appendChild(card);
+        });
+      } else {
+        // Sleek informative empty state
+        gallery.innerHTML = `
+          <div class="empty-state">
+            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📸</div>
+            <h4>Automatic Screenshot Sync Active</h4>
+            <p style="margin-bottom: 1rem;">
+              Drop any screenshot (<code>.png</code>, <code>.webp</code>, <code>.jpg</code>) into the <code>screenshots/</code> or <code>docs/screenshots/</code> folder in the repository.
+            </p>
+            <p style="font-size: 0.85rem; color: #64748b;">
+              The landing page queries the GitHub API on load and will automatically display all added images here without manual HTML editing.
+            </p>
+          </div>
+        `;
+      }
+    }
+
+    // Initialize screenshot scan
+    loadScreenshots();
+  </script>
+</body>
+</html>

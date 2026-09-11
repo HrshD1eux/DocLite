@@ -23,8 +23,6 @@ class SettingsRepository(private val context: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val FONT_SIZE = stringPreferencesKey("font_size")
         val START_SCREEN = stringPreferencesKey("start_screen")
-        val AUTO_SAVE = booleanPreferencesKey("auto_save")
-        val AUTO_SAVE_INTERVAL = intPreferencesKey("auto_save_interval")
         val DEFAULT_SAVE_LOCATION = stringPreferencesKey("default_save_location")
     }
 
@@ -33,8 +31,6 @@ class SettingsRepository(private val context: Context) {
             themeMode = ThemeMode.valueOf(prefs[PreferenceKeys.THEME_MODE] ?: ThemeMode.LIGHT.name),
             fontSizeMode = FontSizeMode.valueOf(prefs[PreferenceKeys.FONT_SIZE] ?: FontSizeMode.MEDIUM.name),
             startScreen = StartScreen.valueOf(prefs[PreferenceKeys.START_SCREEN] ?: StartScreen.HOME.name),
-            isAutoSaveEnabled = prefs[PreferenceKeys.AUTO_SAVE] ?: true,
-            autoSaveIntervalSeconds = prefs[PreferenceKeys.AUTO_SAVE_INTERVAL] ?: 30,
             defaultSaveLocation = prefs[PreferenceKeys.DEFAULT_SAVE_LOCATION] ?: "DocLite Documents"
         )
     }
@@ -54,12 +50,6 @@ class SettingsRepository(private val context: Context) {
     suspend fun updateStartScreen(screen: StartScreen) {
         context.dataStore.edit { prefs ->
             prefs[PreferenceKeys.START_SCREEN] = screen.name
-        }
-    }
-
-    suspend fun updateAutoSave(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[PreferenceKeys.AUTO_SAVE] = enabled
         }
     }
 

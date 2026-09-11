@@ -23,6 +23,7 @@ class PdfEngine(private val context: Context) {
     }
 
     private val renderLock = Any()
+    private val aspectRatioMap = mutableMapOf<Int, Float>()
 
     suspend fun openPdf(uri: Uri): Int = withContext(Dispatchers.IO) {
         synchronized(renderLock) {
@@ -42,6 +43,23 @@ class PdfEngine(private val context: Context) {
         }
     }
 
+    suspend fun getPageAspectRatio(pageIndex: Int): Float = withContext(Dispatchers.IO) {
+        synchronized(renderLock) {
+            aspectRatioMap[pageIndex]?.let { return@synchronized it }
+            val renderer = pdfRenderer ?: return@synchronized 1.414f
+            if (pageIndex !in 0 until renderer.pageCount) return@synchronized 1.414f
+            try {
+                val page = renderer.openPage(pageIndex)
+                val ratio = page.height.toFloat() / page.width.toFloat().coerceAtLeast(1f)
+                page.close()
+                aspectRatioMap[pageIndex] = ratio
+                ratio
+            } catch (e: Exception) {
+                1.414f
+            }
+        }
+    }
+
     suspend fun renderPage(pageIndex: Int, targetWidthPx: Int = 1080): Bitmap? = withContext(Dispatchers.IO) {
         synchronized(renderLock) {
             val renderer = pdfRenderer ?: return@synchronized null
@@ -49,7 +67,8 @@ class PdfEngine(private val context: Context) {
 
             try {
                 val page = renderer.openPage(pageIndex)
-                val aspectRatio = page.height.toFloat() / page.width.toFloat()
+                val aspectRatio = page.height.toFloat() / page.width.toFloat().coerceAtLeast(1f)
+                aspectRatioMap[pageIndex] = aspectRatio
                 val targetHeightPx = (targetWidthPx * aspectRatio).toInt().coerceAtLeast(100)
 
                 val bitmap = Bitmap.createBitmap(targetWidthPx, targetHeightPx, Bitmap.Config.ARGB_8888)
@@ -77,15 +96,17 @@ class PdfEngine(private val context: Context) {
                 for (p in 1..document.numberOfPages) {
                     stripper.startPage = p
                     stripper.endPage = p
-                    val pageText = stripper.getText(document)
+                    val pageText = stripper.getText(document) ?: continue
 
-                    val index = pageText.indexOf(query, ignoreCase = true)
-                    if (index != -1) {
-                        // Extract a snippet around the match
-                        val start = maxOf(0, index - 40)
-                        val end = minOf(pageText.length, index + query.length + 40)
+                    var startIndex = 0
+                    while (startIndex < pageText.length) {
+                        val index = pageText.indexOf(query, startIndex, ignoreCase = true)
+                        if (index == -1) break
+
+                        val start = maxOf(0, index - 30)
+                        val end = minOf(pageText.length, index + query.length + 30)
                         val snippet = "... " + pageText.substring(start, end).replace("\n", " ").trim() + " ..."
-                        
+
                         results.add(
                             PdfSearchResult(
                                 pageIndex = p - 1, // 0-indexed for the UI
@@ -93,6 +114,7 @@ class PdfEngine(private val context: Context) {
                                 matchIndex = index
                             )
                         )
+                        startIndex = index + query.length.coerceAtLeast(1)
                     }
                 }
                 document.close()
@@ -111,6 +133,7 @@ class PdfEngine(private val context: Context) {
 
     private fun closeLocked() {
         try {
+            aspectRatioMap.clear()
             pdfRenderer?.close()
             pdfRenderer = null
             parcelFileDescriptor?.close()

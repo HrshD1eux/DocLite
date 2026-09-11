@@ -6,6 +6,10 @@ import com.HrshD1eux.DocLite.bankstatement.model.BankTransaction
 import com.HrshD1eux.DocLite.bankstatement.model.PartySummary
 import com.HrshD1eux.DocLite.bankstatement.model.StatementAnalysisResult
 import com.opencsv.CSVReaderBuilder
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
@@ -25,9 +29,6 @@ class BankStatementParser(private val context: Context) {
         val fileName = getFileName(uri)
         val ext = fileName.substringAfterLast('.', "").lowercase()
 
-        // Passwords for Office docs are handled natively by POI if needed,
-        // but for now we attempt open. If encrypted, it throws EncryptedDocumentException.
-
         val rows = mutableListOf<List<String>>()
 
         try {
@@ -35,14 +36,22 @@ class BankStatementParser(private val context: Context) {
                 rows.addAll(parseCsvRows(uri))
             } else if (ext == "xlsx" || ext == "xls") {
                 rows.addAll(parseExcelRows(uri, password))
+            } else if (ext == "pdf") {
+                rows.addAll(parsePdfRows(uri, password))
             } else {
-                throw BankStatementParseException("Unsupported file type: $ext")
+                throw BankStatementParseException("Unsupported file type: $ext. Please choose an Excel (.xlsx, .xls), CSV, or PDF bank statement.")
             }
         } catch (e: org.apache.poi.EncryptedDocumentException) {
             throw PasswordRequiredException("This file is password-protected. Please enter password.")
+        } catch (e: InvalidPasswordException) {
+            throw PasswordRequiredException("This PDF statement is password-protected. Please enter password.")
         } catch (e: PasswordRequiredException) {
             throw e
         } catch (e: Exception) {
+            if (e.message?.contains("password", ignoreCase = true) == true ||
+                e.message?.contains("encrypted", ignoreCase = true) == true) {
+                throw PasswordRequiredException("This file is password-protected. Please enter password.")
+            }
             e.printStackTrace()
             throw BankStatementParseException("Failed to parse document: ${e.message}")
         }
@@ -52,6 +61,68 @@ class BankStatementParser(private val context: Context) {
         }
 
         processTransactionRows(fileName, rows)
+    }
+
+    private fun parsePdfRows(uri: Uri, password: String?): List<List<String>> {
+        val resultRows = mutableListOf<List<String>>()
+        PDFBoxResourceLoader.init(context.applicationContext)
+
+        val inputStream = context.contentResolver.openInputStream(uri)
+            ?: throw java.io.FileNotFoundException("Could not open PDF file")
+
+        val document = try {
+            if (password.isNullOrEmpty()) {
+                PDDocument.load(inputStream)
+            } else {
+                PDDocument.load(inputStream, password)
+            }
+        } catch (e: InvalidPasswordException) {
+            throw PasswordRequiredException("This PDF statement is password-protected. Please enter password.")
+        } catch (e: java.io.IOException) {
+            if (e.message?.contains("password", ignoreCase = true) == true ||
+                e.message?.contains("encrypted", ignoreCase = true) == true) {
+                throw PasswordRequiredException("This PDF statement is password-protected. Please enter password.")
+            }
+            throw e
+        }
+
+        document.use { doc ->
+            if (doc.isEncrypted && password.isNullOrEmpty()) {
+                throw PasswordRequiredException("This PDF statement is password-protected. Please enter password.")
+            }
+
+            val stripper = PDFTextStripper()
+            stripper.sortByPosition = true
+            val text = stripper.getText(doc) ?: ""
+            val lines = text.lines()
+
+            val dateRegex = Regex("^(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}[/-]\\d{1,2}[/-]\\d{1,2})\\s+(.+?)\\s+([\\d,]+\\.\\d{2}|[\\d,]+)(?:\\s+([\\d,]+\\.\\d{2}|[\\d,]+))?$")
+
+            for (line in lines) {
+                val trimmed = line.trim()
+                if (trimmed.isBlank()) continue
+
+                val tokens = trimmed.split(Regex("\\s{2,}|\t")).map { it.trim() }.filter { it.isNotBlank() }
+                if (tokens.size >= 2) {
+                    resultRows.add(tokens)
+                } else {
+                    val match = dateRegex.find(trimmed)
+                    if (match != null) {
+                        val row = mutableListOf<String>()
+                        row.add(match.groupValues[1])
+                        row.add(match.groupValues[2])
+                        row.add(match.groupValues[3])
+                        if (match.groupValues.size > 4 && match.groupValues[4].isNotBlank()) {
+                            row.add(match.groupValues[4])
+                        }
+                        resultRows.add(row)
+                    } else {
+                        resultRows.add(listOf(trimmed))
+                    }
+                }
+            }
+        }
+        return resultRows
     }
 
     private fun parseCsvRows(uri: Uri): List<List<String>> {
@@ -116,7 +187,7 @@ class BankStatementParser(private val context: Context) {
         return resultRows
     }
 
-    private fun processTransactionRows(
+    internal fun processTransactionRows(
         fileName: String,
         allRows: List<List<String>>
     ): StatementAnalysisResult {
@@ -128,8 +199,8 @@ class BankStatementParser(private val context: Context) {
         var amountColIndex = -1
         var typeColIndex = -1
 
-        // 1. Detect Header Row in top 25 rows
-        for (i in 0 until minOf(25, allRows.size)) {
+        // 1. Detect Header Row in top 50 rows
+        for (i in 0 until minOf(50, allRows.size)) {
             val row = allRows[i].map { it.lowercase().trim() }
 
             var hasDate = false
@@ -144,7 +215,8 @@ class BankStatementParser(private val context: Context) {
                 if (text.contains("particular") || text.contains("description") ||
                     text.contains("narration") || text.contains("party") ||
                     text.contains("account") || text.contains("payee") ||
-                    text.contains("sender") || text.contains("remarks") || text.contains("details")) {
+                    text.contains("sender") || text.contains("remarks") || text.contains("details") ||
+                    text.contains("transaction") || text.contains("tran details")) {
                     partyColIndex = colIdx
                     hasNarration = true
                 }
@@ -171,7 +243,24 @@ class BankStatementParser(private val context: Context) {
         }
 
         if (headerRowIndex == -1) {
-            throw BankStatementParseException("Could not identify the header row. Please ensure columns have clear names like 'Date', 'Description', 'Credit', 'Debit'.")
+            val dateRegex = Regex("^\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}")
+            val firstDataRow = allRows.indexOfFirst { row ->
+                row.isNotEmpty() && dateRegex.containsMatchIn(row[0]) && row.any { cell -> parseDoubleAmount(cell) > 0 }
+            }
+            if (firstDataRow != -1) {
+                headerRowIndex = (firstDataRow - 1).coerceAtLeast(0)
+                dateColIndex = 0
+                partyColIndex = 1.coerceAtMost(allRows[firstDataRow].lastIndex)
+                val sampleRow = allRows[firstDataRow]
+                if (sampleRow.size >= 4) {
+                    debitColIndex = 2
+                    creditColIndex = 3
+                } else if (sampleRow.size == 3) {
+                    amountColIndex = 2
+                }
+            } else {
+                throw BankStatementParseException("Could not identify the header row. Please ensure columns have clear names like 'Date', 'Description', 'Credit', 'Debit'.")
+            }
         }
 
         if (partyColIndex == -1) partyColIndex = 1.coerceAtMost(allRows.firstOrNull()?.lastIndex ?: 0)
@@ -319,7 +408,7 @@ class BankStatementParser(private val context: Context) {
         )
     }
 
-    private fun extractPartyName(narration: String): String {
+    internal fun extractPartyName(narration: String): String {
         var clean = narration.trim()
 
         if (clean.contains("/")) {
@@ -357,12 +446,13 @@ class BankStatementParser(private val context: Context) {
         return clean.uppercase()
     }
 
-    private fun parseDoubleAmount(str: String): Double {
+    internal fun parseDoubleAmount(str: String): Double {
         if (str.isBlank()) return 0.0
         val clean = str.replace(",", "")
             .replace("₹", "")
             .replace("$", "")
-            .replace("Rs", "", ignoreCase = true)
+            .replace(Regex("(?i)rs\\.?|inr|usd|eur|gbp"), "")
+            .replace(Regex("[^0-9.\\-+]"), "")
             .trim()
         return clean.toDoubleOrNull() ?: 0.0
     }

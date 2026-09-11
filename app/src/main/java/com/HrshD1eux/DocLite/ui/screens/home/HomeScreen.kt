@@ -29,9 +29,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
@@ -81,6 +81,7 @@ fun HomeScreen(
     onOpenFile: (DocumentFile) -> Unit,
     onOpenUri: (Uri, DocumentFormat) -> Unit,
     onOpenBankStatementAnalyser: () -> Unit,
+    onAnalyzeStatement: (DocumentFile) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -114,26 +115,10 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         val permissionsToRequest = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.data = Uri.parse("package:${context.packageName}")
-                    context.startActivity(intent)
-                } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    context.startActivity(intent)
-                }
-            }
-        }
-        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
-            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
-            permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
-        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        } else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
             permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
         
         if (permissionsToRequest.isNotEmpty()) {
@@ -494,7 +479,8 @@ fun HomeScreen(
                                 },
                                 onDeleteClick = { viewModel.deleteDocument(file) },
                                 onShareClick = { shareFile(file) },
-                                onProtectClick = { selectedFileForPasswordSet = file }
+                                onProtectClick = { selectedFileForPasswordSet = file },
+                                onAnalyzeStatement = { onAnalyzeStatement(file) }
                             )
                         }
                     }
@@ -549,7 +535,7 @@ fun HomeScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.InsertDriveFile,
+                                        imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
                                         contentDescription = "No documents",
                                         tint = Color(0xFF70787C),
                                         modifier = Modifier.size(48.dp)
@@ -581,7 +567,8 @@ fun HomeScreen(
                                 },
                                 onDeleteClick = { viewModel.deleteDocument(file) },
                                 onShareClick = { shareFile(file) },
-                                onProtectClick = { selectedFileForPasswordSet = file }
+                                onProtectClick = { selectedFileForPasswordSet = file },
+                                onAnalyzeStatement = { onAnalyzeStatement(file) }
                             )
                         }
                     }

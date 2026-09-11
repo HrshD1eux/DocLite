@@ -103,32 +103,49 @@ class FormulaEngine {
     }
 
     private fun evaluateSimpleMath(expression: String, sheet: Sheet): String {
-        // Resolve cell names like A1 + B1
-        var resolvedExpr = expression
+        // Resolve cell names like A1 + B1 using token matching to avoid substring collision (e.g. A1 inside A10)
         val cellRegex = Regex("[A-Z]+[0-9]+")
-        cellRegex.findAll(expression).forEach { match ->
+        val resolvedExpr = cellRegex.replace(expression) { match ->
             val cellName = match.value
             val coords = Sheet.cellNameToCoords(cellName)
             if (coords != null) {
                 val cell = sheet.getCell(coords.first, coords.second)
                 val valStr = if (cell.evaluatedValue.isNotEmpty()) cell.evaluatedValue else cell.value
                 val num = valStr.toDoubleOrNull() ?: 0.0
-                resolvedExpr = resolvedExpr.replace(cellName, num.toString())
+                num.toString()
+            } else {
+                match.value
             }
         }
 
         return try {
-            if (resolvedExpr.contains("+")) {
-                val parts = resolvedExpr.split("+").mapNotNull { it.trim().toDoubleOrNull() }
-                formatResult(parts.sum())
-            } else if (resolvedExpr.contains("-")) {
-                val parts = resolvedExpr.split("-").mapNotNull { it.trim().toDoubleOrNull() }
-                if (parts.size >= 2) formatResult(parts[0] - parts.drop(1).sum()) else resolvedExpr
-            } else if (resolvedExpr.contains("*")) {
-                val parts = resolvedExpr.split("*").mapNotNull { it.trim().toDoubleOrNull() }
-                if (parts.isNotEmpty()) formatResult(parts.reduce { acc, d -> acc * d }) else resolvedExpr
-            } else {
-                resolvedExpr
+            when {
+                resolvedExpr.contains("+") -> {
+                    val parts = resolvedExpr.split("+").mapNotNull { it.trim().toDoubleOrNull() }
+                    formatResult(parts.sum())
+                }
+                resolvedExpr.contains("-") -> {
+                    val parts = resolvedExpr.split("-").mapNotNull { it.trim().toDoubleOrNull() }
+                    if (parts.size >= 2) formatResult(parts[0] - parts.drop(1).sum()) else resolvedExpr
+                }
+                resolvedExpr.contains("*") -> {
+                    val parts = resolvedExpr.split("*").mapNotNull { it.trim().toDoubleOrNull() }
+                    if (parts.isNotEmpty()) formatResult(parts.reduce { acc, d -> acc * d }) else resolvedExpr
+                }
+                resolvedExpr.contains("/") -> {
+                    val parts = resolvedExpr.split("/").mapNotNull { it.trim().toDoubleOrNull() }
+                    if (parts.size >= 2) {
+                        if (parts.drop(1).any { it == 0.0 }) {
+                            "#DIV/0!"
+                        } else {
+                            formatResult(parts.drop(1).fold(parts[0]) { acc, d -> acc / d })
+                        }
+                    } else resolvedExpr
+                }
+                else -> {
+                    val num = resolvedExpr.trim().toDoubleOrNull()
+                    if (num != null) formatResult(num) else resolvedExpr
+                }
             }
         } catch (e: Exception) {
             resolvedExpr
@@ -136,10 +153,12 @@ class FormulaEngine {
     }
 
     private fun formatResult(value: Double): String {
-        return if (value % 1.0 == 0.0) {
+        return if (value.isNaN() || value.isInfinite()) {
+            "#ERROR!"
+        } else if (value % 1.0 == 0.0) {
             value.toLong().toString()
         } else {
-            String.format("%.2f", value)
+            String.format(java.util.Locale.US, "%.2f", value)
         }
     }
 }

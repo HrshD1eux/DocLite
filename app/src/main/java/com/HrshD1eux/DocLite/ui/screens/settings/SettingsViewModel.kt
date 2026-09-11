@@ -42,12 +42,6 @@ class SettingsViewModel(
         }
     }
 
-    fun setAutoSave(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.updateAutoSave(enabled)
-        }
-    }
-
     fun clearRecentFilesHistory() {
         viewModelScope.launch {
             fileRepository.clearRecentFiles()

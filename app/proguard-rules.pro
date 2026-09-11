@@ -5,17 +5,48 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Line numbers for crash debugging
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve Annotations & Reflection metadata
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Apache POI & XMLBeans
+-keep class org.apache.poi.** { *; }
+-dontwarn org.apache.poi.**
+-keep class org.apache.xmlbeans.** { *; }
+-dontwarn org.apache.xmlbeans.**
+-keep class schemasMicrosoftComOffice** { *; }
+-keep class schemasMicrosoftComVml** { *; }
+-keep class org.openxmlformats.schemas.** { *; }
+-dontwarn org.openxmlformats.schemas.**
+-keep class org.etsi.uri.** { *; }
+-dontwarn org.etsi.uri.**
+-dontwarn org.apache.commons.**
+-dontwarn com.github.virtuald.**
+-keep class org.w3c.dom.** { *; }
+-dontwarn org.w3c.dom.**
+-dontwarn java.awt.**
+-dontwarn javax.xml.stream.**
+-dontwarn javax.xml.namespace.**
+-dontwarn javax.xml.datatype.**
+
+# PDFBox Android
+-keep class com.tom_roush.pdfbox.** { *; }
+-dontwarn com.tom_roush.pdfbox.**
+
+# OpenCSV
+-keep class com.opencsv.** { *; }
+-dontwarn com.opencsv.**
+
+# Room Database & SQLite
+-keep class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.paging.**
+
+# DataStore & Preferences
+-dontwarn androidx.datastore.**
+
+# Coil Image Loader
+-keep class coil.** { *; }
+-dontwarn coil.**

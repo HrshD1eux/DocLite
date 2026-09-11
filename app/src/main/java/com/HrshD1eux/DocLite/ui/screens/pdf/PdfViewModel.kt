@@ -2,6 +2,7 @@ package com.HrshD1eux.DocLite.ui.screens.pdf
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.HrshD1eux.DocLite.models.AnnotationType
@@ -25,8 +26,11 @@ sealed interface PdfUiState {
         val currentPageBitmap: Bitmap? = null,
         val annotations: List<PdfAnnotation> = emptyList(),
         val selectedAnnotationTool: AnnotationType? = null,
+        val isAnnotationMode: Boolean = false,
+        val isSearchActive: Boolean = false,
         val searchQuery: String = "",
         val searchResults: List<PdfSearchResult> = emptyList(),
+        val currentMatchIndex: Int = 0,
         val isSearching: Boolean = false,
         val statusMessage: String? = null
     ) : PdfUiState
@@ -41,10 +45,18 @@ class PdfViewModel(
     private val _uiState = MutableStateFlow<PdfUiState>(PdfUiState.Loading)
     val uiState: StateFlow<PdfUiState> = _uiState.asStateFlow()
 
-    private val pageCache = mutableMapOf<Int, Bitmap>()
+    private val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+    private val cacheSizeKb = (maxMemoryKb / 8).coerceAtLeast(16 * 1024)
+
+    private val pageCache = object : LruCache<Int, Bitmap>(cacheSizeKb) {
+        override fun sizeOf(key: Int, bitmap: Bitmap): Int {
+            return bitmap.byteCount / 1024
+        }
+    }
 
     fun openPdf(uri: Uri) {
         viewModelScope.launch {
+            pageCache.evictAll()
             _uiState.value = PdfUiState.Loading
             val pageCount = documentRepository.pdfEngine.openPdf(uri)
             if (pageCount > 0) {
@@ -73,16 +85,21 @@ class PdfViewModel(
         }
     }
 
+    suspend fun getPageAspectRatio(pageIndex: Int): Float {
+        return documentRepository.pdfEngine.getPageAspectRatio(pageIndex)
+    }
+
     suspend fun getPage(pageIndex: Int): Bitmap? {
-        if (pageCache.containsKey(pageIndex)) {
-            return pageCache[pageIndex]
+        val cached = pageCache.get(pageIndex)
+        if (cached != null && !cached.isRecycled) {
+            return cached
         }
         val currentState = _uiState.value as? PdfUiState.Success ?: return null
         if (pageIndex in 0 until currentState.pageCount) {
             return try {
                 val bitmap = documentRepository.pdfEngine.renderPage(pageIndex)
                 if (bitmap != null) {
-                    pageCache[pageIndex] = bitmap
+                    pageCache.put(pageIndex, bitmap)
                 }
                 bitmap
             } catch (e: Exception) {
@@ -107,6 +124,21 @@ class PdfViewModel(
         if (pageIndex in 0 until currentState.pageCount) {
             _uiState.value = currentState.copy(currentPageIndex = pageIndex)
         }
+    }
+
+    fun jumpToPage(pageIndex: Int) {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return
+        val clamped = pageIndex.coerceIn(0, (currentState.pageCount - 1).coerceAtLeast(0))
+        _uiState.value = currentState.copy(currentPageIndex = clamped)
+    }
+
+    fun toggleAnnotationMode(enabled: Boolean? = null) {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return
+        val newMode = enabled ?: !currentState.isAnnotationMode
+        _uiState.value = currentState.copy(
+            isAnnotationMode = newMode,
+            selectedAnnotationTool = if (!newMode) null else currentState.selectedAnnotationTool
+        )
     }
 
     fun selectTool(tool: AnnotationType?) {
@@ -153,22 +185,81 @@ class PdfViewModel(
         }
     }
 
+    fun toggleSearch(active: Boolean? = null) {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return
+        val newActive = active ?: !currentState.isSearchActive
+        if (!newActive) {
+            _uiState.value = currentState.copy(
+                isSearchActive = false,
+                searchQuery = "",
+                searchResults = emptyList(),
+                currentMatchIndex = 0,
+                isSearching = false
+            )
+        } else {
+            _uiState.value = currentState.copy(isSearchActive = true)
+        }
+    }
+
+    fun clearSearch() {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return
+        _uiState.value = currentState.copy(
+            searchQuery = "",
+            searchResults = emptyList(),
+            currentMatchIndex = 0,
+            isSearching = false
+        )
+    }
+
     fun performSearch(query: String) {
         val currentState = _uiState.value as? PdfUiState.Success ?: return
+        if (query.isBlank()) {
+            clearSearch()
+            return
+        }
         _uiState.value = currentState.copy(searchQuery = query, isSearching = true)
 
         viewModelScope.launch {
             val results = documentRepository.pdfEngine.searchInPdf(query)
-            _uiState.value = currentState.copy(
-                searchQuery = query,
-                searchResults = results,
-                isSearching = false
-            )
+            val state = _uiState.value as? PdfUiState.Success ?: return@launch
+            if (state.searchQuery == query) {
+                _uiState.value = state.copy(
+                    searchResults = results,
+                    currentMatchIndex = 0,
+                    isSearching = false
+                )
+            }
         }
+    }
+
+    fun nextSearchMatch(): Int? {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return null
+        if (currentState.searchResults.isEmpty()) return null
+        val nextIndex = (currentState.currentMatchIndex + 1) % currentState.searchResults.size
+        _uiState.value = currentState.copy(currentMatchIndex = nextIndex)
+        return currentState.searchResults[nextIndex].pageIndex
+    }
+
+    fun previousSearchMatch(): Int? {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return null
+        if (currentState.searchResults.isEmpty()) return null
+        val prevIndex = if (currentState.currentMatchIndex - 1 < 0) {
+            currentState.searchResults.size - 1
+        } else {
+            currentState.currentMatchIndex - 1
+        }
+        _uiState.value = currentState.copy(currentMatchIndex = prevIndex)
+        return currentState.searchResults[prevIndex].pageIndex
     }
 
     private fun getFileName(uri: Uri): String {
         return uri.lastPathSegment ?: "document.pdf"
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        pageCache.evictAll()
+        documentRepository.pdfEngine.close()
     }
 }
 

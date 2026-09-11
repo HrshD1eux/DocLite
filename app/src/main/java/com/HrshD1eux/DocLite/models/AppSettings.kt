@@ -20,8 +20,6 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.LIGHT,
     val fontSizeMode: FontSizeMode = FontSizeMode.MEDIUM,
     val startScreen: StartScreen = StartScreen.HOME,
-    val isAutoSaveEnabled: Boolean = true,
-    val autoSaveIntervalSeconds: Int = 30,
     val defaultSaveLocation: String = "DocLite Documents"
 )
 

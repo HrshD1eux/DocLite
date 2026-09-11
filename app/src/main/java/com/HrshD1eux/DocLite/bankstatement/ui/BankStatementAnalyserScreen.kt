@@ -57,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,15 +83,31 @@ import java.util.Locale
 @Composable
 fun BankStatementAnalyserScreen(
     viewModel: BankStatementViewModel,
+    initialUri: Uri? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val excelPickerLauncher = rememberLauncherForActivityResult(
+    val supportedMimeTypes = remember {
+        arrayOf(
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/pdf",
+            "text/csv",
+            "text/plain",
+            "*/*"
+        )
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let { viewModel.analyzeStatement(it) }
+    }
+
+    LaunchedEffect(initialUri) {
+        initialUri?.let { viewModel.analyzeStatement(it) }
     }
 
     var passwordInput by remember { mutableStateOf("") }
@@ -109,7 +126,7 @@ fun BankStatementAnalyserScreen(
                             )
                         )
                         Text(
-                            text = "Excel (.xls, .xlsx) credit/debit & party analytics",
+                            text = "Excel, CSV & PDF statement analytics",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -122,20 +139,10 @@ fun BankStatementAnalyserScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = {
-                            excelPickerLauncher.launch(
-                                arrayOf(
-                                    "application/vnd.ms-excel",
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    "text/csv",
-                                    "text/plain",
-                                    "*/*"
-                                )
-                            )
-                        },
+                        onClick = { filePickerLauncher.launch(supportedMimeTypes) },
                         modifier = Modifier.testTag("upload_excel_action")
                     ) {
-                        Icon(Icons.Default.FileUpload, contentDescription = "Upload Excel")
+                        Icon(Icons.Default.FileUpload, contentDescription = "Upload Statement")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -154,17 +161,7 @@ fun BankStatementAnalyserScreen(
             when (val currentState = state) {
                 is BankStatementUiState.Idle -> {
                     IdleUploadState(
-                        onSelectFile = {
-                            excelPickerLauncher.launch(
-                                arrayOf(
-                                    "application/vnd.ms-excel",
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    "text/csv",
-                                    "text/plain",
-                                    "*/*"
-                                )
-                            )
-                        }
+                        onSelectFile = { filePickerLauncher.launch(supportedMimeTypes) }
                     )
                 }
 
@@ -197,7 +194,7 @@ fun BankStatementAnalyserScreen(
                         },
                         title = {
                             Text(
-                                text = "Password Protected Excel",
+                                text = "Password Protected Statement",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
                         },
@@ -212,7 +209,7 @@ fun BankStatementAnalyserScreen(
                                 OutlinedTextField(
                                     value = passwordInput,
                                     onValueChange = { passwordInput = it },
-                                    label = { Text("Excel Password") },
+                                    label = { Text("Statement Password") },
                                     singleLine = true,
                                     isError = currentState.errorMessage != null,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -279,17 +276,7 @@ fun BankStatementAnalyserScreen(
                         )
                         Spacer(modifier = Modifier.height(20.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(onClick = {
-                                excelPickerLauncher.launch(
-                                    arrayOf(
-                                        "application/vnd.ms-excel",
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        "text/csv",
-                                        "text/plain",
-                                        "*/*"
-                                    )
-                                )
-                            }) {
+                            Button(onClick = { filePickerLauncher.launch(supportedMimeTypes) }) {
                                 Text("Select Another File")
                             }
                         }
@@ -301,17 +288,7 @@ fun BankStatementAnalyserScreen(
                         state = currentState,
                         onSearchChange = viewModel::updateSearchQuery,
                         onTabChange = viewModel::setActiveTab,
-                        onSelectNewFile = {
-                            excelPickerLauncher.launch(
-                                arrayOf(
-                                    "application/vnd.ms-excel",
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    "text/csv",
-                                    "text/plain",
-                                    "*/*"
-                                )
-                            )
-                        }
+                        onSelectNewFile = { filePickerLauncher.launch(supportedMimeTypes) }
                     )
                 }
             }
@@ -355,7 +332,7 @@ private fun IdleUploadState(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Upload your Excel bank statement (.xls or .xlsx). Decrypt password protected statements and automatically compute credit/debit totals, top 60 senders & recipients.",
+            text = "Upload your bank statement (.xlsx, .xls, .csv, or .pdf). Decrypt password protected statements and automatically compute credit/debit totals, top senders & recipients.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -373,7 +350,7 @@ private fun IdleUploadState(
         ) {
             Icon(Icons.Default.FileUpload, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Upload Excel Statement (.xls / .xlsx)", style = MaterialTheme.typography.titleMedium)
+            Text("Upload Statement (Excel, CSV, PDF)", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -667,7 +644,7 @@ private fun PartyItemCard(
 }
 
 private fun formatCurrency(amount: Double): String {
-    val formatter = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+    val formatter = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN"))
     return try {
         formatter.format(amount)
     } catch (e: Exception) {

@@ -8,8 +8,11 @@ import com.HrshD1eux.DocLite.models.Slide
 import com.HrshD1eux.DocLite.models.SlideElement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.poi.openxml4j.opc.OPCPackage
+import org.apache.poi.openxml4j.opc.PackageAccess
 import org.apache.poi.xslf.usermodel.XMLSlideShow
 import org.apache.poi.xslf.usermodel.XSLFTextShape
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -17,104 +20,97 @@ class PowerPointEngine(private val context: Context) {
 
     suspend fun loadPresentation(uri: Uri): PresentationDocument = withContext(Dispatchers.IO) {
         val fileName = getFileName(uri)
+        val ext = fileName.substringAfterLast('.', "").lowercase()
 
+        if (ext == "ppt") {
+            throw UnsupportedOperationException("Legacy PowerPoint 97-2003 (.ppt) format is not supported. Please convert to .pptx.")
+        }
+
+        val tempFile = File.createTempFile("pptx_cache_", ".tmp", context.cacheDir)
         try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                val ppt = XMLSlideShow(inputStream)
-                val parsedSlides = mutableListOf<Slide>()
-
-                for ((index, xslfSlide) in ppt.slides.withIndex()) {
-                    val elements = mutableListOf<SlideElement>()
-                    
-                    for (shape in xslfSlide.shapes) {
-                        if (shape is XSLFTextShape) {
-                            val text = shape.text
-                            if (text.isNotBlank()) {
-                                val type = if (shape.placeholder != null) {
-                                    if (shape.placeholder.name.contains("TITLE", ignoreCase = true)) ElementType.TITLE
-                                    else if (shape.placeholder.name.contains("SUBTITLE", ignoreCase = true)) ElementType.SUBTITLE
-                                    else ElementType.BODY_TEXT
-                                } else {
-                                    ElementType.BODY_TEXT
-                                }
-                                
-                                elements.add(
-                                    SlideElement(
-                                        type = type,
-                                        textContent = text,
-                                        fontSizeSp = shape.textParagraphs.firstOrNull()?.textRuns?.firstOrNull()?.fontSize?.toFloat() ?: 18f
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    parsedSlides.add(
-                        Slide(
-                            slideNumber = index + 1,
-                            title = xslfSlide.title ?: "Slide ${index + 1}",
-                            elements = elements.ifEmpty { listOf(SlideElement(type = ElementType.BODY_TEXT, textContent = "Empty Slide")) }
-                        )
-                    )
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
                 }
+            } ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
 
-                PresentationDocument(
-                    title = fileName,
-                    fileUri = uri.toString(),
-                    slides = parsedSlides.ifEmpty { createDefaultSlides(fileName) }
+            val pkg = try {
+                OPCPackage.open(tempFile, PackageAccess.READ)
+            } catch (e: org.apache.poi.openxml4j.exceptions.NotOfficeXmlFileException) {
+                throw IllegalArgumentException("Unsupported or corrupted PowerPoint format. The file is not a valid .pptx document.", e)
+            }
+
+            val ppt = try {
+                XMLSlideShow(pkg)
+            } catch (e: OutOfMemoryError) {
+                throw IllegalStateException("This presentation is too large to open in available device memory.", e)
+            } catch (e: Exception) {
+                throw IllegalArgumentException("Failed to open presentation: ${e.localizedMessage ?: "Corrupted file"}", e)
+            }
+
+        val parsedSlides = mutableListOf<Slide>()
+        var hasUnrecognizedElements = false
+
+        for ((index, xslfSlide) in ppt.slides.withIndex()) {
+            val elements = mutableListOf<SlideElement>()
+            
+            if (xslfSlide.shapes.any { it !is XSLFTextShape }) {
+                hasUnrecognizedElements = true
+            }
+
+            for (shape in xslfSlide.shapes) {
+                if (shape is XSLFTextShape) {
+                    val text = shape.text
+                    if (text.isNotBlank()) {
+                        val type = if (shape.placeholder != null) {
+                            if (shape.placeholder.name.contains("TITLE", ignoreCase = true)) ElementType.TITLE
+                            else if (shape.placeholder.name.contains("SUBTITLE", ignoreCase = true)) ElementType.SUBTITLE
+                            else ElementType.BODY_TEXT
+                        } else {
+                            ElementType.BODY_TEXT
+                        }
+                        
+                        elements.add(
+                            SlideElement(
+                                type = type,
+                                textContent = text,
+                                fontSizeSp = shape.textParagraphs.firstOrNull()?.textRuns?.firstOrNull()?.fontSize?.toFloat() ?: 18f
+                            )
+                        )
+                    }
+                }
+            }
+
+            parsedSlides.add(
+                Slide(
+                    slideNumber = index + 1,
+                    title = xslfSlide.title ?: "Slide ${index + 1}",
+                    elements = elements.ifEmpty { listOf(SlideElement(type = ElementType.BODY_TEXT, textContent = "Empty Slide")) }
                 )
-            } ?: createDefaultPresentation(uri, fileName)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            createDefaultPresentation(uri, fileName)
+            )
+        }
+
+            PresentationDocument(
+                title = fileName,
+                fileUri = uri.toString(),
+                slides = parsedSlides.ifEmpty { listOf(Slide(slideNumber = 1)) },
+                hasUnrecognizedElements = hasUnrecognizedElements
+            )
+        } finally {
+            tempFile.delete()
         }
     }
 
-    private fun createDefaultPresentation(uri: Uri, fileName: String): PresentationDocument {
-        return PresentationDocument(
-            title = fileName,
-            fileUri = uri.toString(),
-            slides = createDefaultSlides(fileName)
-        )
-    }
-
-    private fun createDefaultSlides(fileName: String): List<Slide> {
-        return listOf(
-            Slide(
-                slideNumber = 1,
-                title = "Welcome to DocLite Presentation",
-                elements = listOf(
-                    SlideElement(type = ElementType.TITLE, textContent = fileName.substringBeforeLast("."), fontSizeSp = 30f),
-                    SlideElement(type = ElementType.SUBTITLE, textContent = "Lightweight Offline PowerPoint Viewer & Editor", fontSizeSp = 20f)
-                )
-            )
-        )
-    }
-
     suspend fun savePresentation(uri: Uri, document: PresentationDocument): Boolean = withContext(Dispatchers.IO) {
+        if (document.hasUnrecognizedElements) {
+            throw IllegalStateException("Cannot save: Presentation contains unsupported elements (images, shapes, or layouts) that would be destroyed.")
+        }
         try {
-            var ppt: XMLSlideShow? = null
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                try {
-                    ppt = XMLSlideShow(inputStream)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            if (ppt == null) {
-                ppt = XMLSlideShow()
-            }
-
-            ppt?.let { slideshow ->
-                // Clear existing slides for overwrite
-                while (slideshow.slides.size > 0) {
-                    slideshow.removeSlide(0)
-                }
-
+            val slideshow = XMLSlideShow()
+            try {
                 document.slides.forEach { slideModel ->
                     val xslfSlide = slideshow.createSlide()
-                    
+
                     slideModel.elements.forEach { elem ->
                         if (elem.textContent.isNotBlank()) {
                             val shape = xslfSlide.createTextBox()
@@ -125,10 +121,14 @@ class PowerPointEngine(private val context: Context) {
 
                 context.contentResolver.openOutputStream(uri, "rwt")?.use { outputStream ->
                     slideshow.write(outputStream)
-                }
-                slideshow.close()
+                } ?: return@withContext false
                 true
-            } ?: false
+            } finally {
+                slideshow.close()
+            }
+        } catch (e: OutOfMemoryError) {
+            e.printStackTrace()
+            false
         } catch (e: Exception) {
             e.printStackTrace()
             false

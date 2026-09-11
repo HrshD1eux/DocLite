@@ -41,6 +41,9 @@ import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -115,8 +118,16 @@ fun ExcelEditorScreen(
                 actions = {
                     val successState = state as? ExcelUiState.Success
                     if (successState != null) {
-                        IconButton(onClick = viewModel::saveSpreadsheet) {
-                            Icon(Icons.Default.Save, contentDescription = "Save Spreadsheet")
+                        val canSave = !successState.document.hasUnrecognizedElements
+                        IconButton(
+                            onClick = viewModel::saveSpreadsheet,
+                            enabled = canSave
+                        ) {
+                            Icon(
+                                Icons.Default.Save, 
+                                contentDescription = "Save Spreadsheet",
+                                tint = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
                         }
                     }
                 }
@@ -136,6 +147,16 @@ fun ExcelEditorScreen(
             }
 
             is ExcelUiState.Error -> {
+                AlertDialog(
+                    onDismissRequest = onBack,
+                    title = { Text("Unsupported or corrupted file format") },
+                    text = { Text(uiState.message) },
+                    confirmButton = {
+                        TextButton(onClick = onBack) {
+                            Text("Go Back")
+                        }
+                    }
+                )
                 Box(
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center
@@ -161,6 +182,30 @@ fun ExcelEditorScreen(
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
+                    if (uiState.document.hasUnrecognizedElements) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Read-Only: Spreadsheet contains unsupported visual elements (charts, drawing objects). Saving is disabled to prevent data loss.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
                     // Formula Bar Component
                     Surface(
                         modifier = Modifier.fillMaxWidth(),

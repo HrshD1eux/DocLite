@@ -2,6 +2,8 @@ package com.HrshD1eux.DocLite.ui.screens.image
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,13 +68,34 @@ fun ImageViewerScreen(
                     val uiSuccess = state as? ImageUiState.Success
                     if (uiSuccess != null) {
                         IconButton(onClick = viewModel::rotateRight) {
-                            Icon(Icons.Default.RotateRight, contentDescription = "Rotate")
+                            Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotate")
                         }
                         IconButton(
                             onClick = {
+                                val shareUri = if (uiSuccess.uri.scheme == "file" || uiSuccess.uri.scheme == null) {
+                                    val file = File(uiSuccess.uri.path ?: "")
+                                    if (file.exists()) {
+                                        try {
+                                            FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                file
+                                            )
+                                        } catch (e: Exception) {
+                                            uiSuccess.uri
+                                        }
+                                    } else {
+                                        uiSuccess.uri
+                                    }
+                                } else {
+                                    uiSuccess.uri
+                                }
+
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "image/*"
-                                    putExtra(Intent.EXTRA_STREAM, uiSuccess.uri)
+                                    putExtra(Intent.EXTRA_STREAM, shareUri)
+                                    clipData = android.content.ClipData.newRawUri("image", shareUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Share Image"))
                             }

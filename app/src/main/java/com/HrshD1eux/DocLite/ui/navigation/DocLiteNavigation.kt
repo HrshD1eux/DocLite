@@ -33,6 +33,8 @@ import com.HrshD1eux.DocLite.ui.screens.powerpoint.PowerPointEditorScreen
 import com.HrshD1eux.DocLite.ui.screens.powerpoint.PowerPointViewModel
 import com.HrshD1eux.DocLite.ui.screens.settings.SettingsScreen
 import com.HrshD1eux.DocLite.ui.screens.settings.SettingsViewModel
+import com.HrshD1eux.DocLite.ui.screens.text.TextEditorScreen
+import com.HrshD1eux.DocLite.ui.screens.text.TextViewModel
 import com.HrshD1eux.DocLite.ui.screens.word.WordEditorScreen
 import com.HrshD1eux.DocLite.ui.screens.word.WordViewModel
 import com.HrshD1eux.DocLite.bankstatement.ui.BankStatementAnalyserScreen
@@ -43,17 +45,23 @@ object Routes {
     const val FILE_MANAGER = "file_manager"
     const val SETTINGS = "settings"
     const val BANK_STATEMENT_ANALYSER = "bank_statement_analyser"
+    const val BANK_STATEMENT_ANALYSER_ROUTE = "bank_statement_analyser?fileUri={fileUri}"
     const val EDITOR_WORD = "editor_word/{fileUri}"
+    const val EDITOR_TEXT = "editor_text/{fileUri}"
     const val EDITOR_EXCEL = "editor_excel/{fileUri}"
     const val EDITOR_POWERPOINT = "editor_powerpoint/{fileUri}"
     const val ANNOTATOR_PDF = "annotator_pdf/{fileUri}"
     const val VIEWER_IMAGE = "viewer_image/{fileUri}"
 
     fun buildWordRoute(uri: Uri): String = "editor_word/${Uri.encode(uri.toString())}"
+    fun buildTextRoute(uri: Uri): String = "editor_text/${Uri.encode(uri.toString())}"
     fun buildExcelRoute(uri: Uri): String = "editor_excel/${Uri.encode(uri.toString())}"
     fun buildPowerPointRoute(uri: Uri): String = "editor_powerpoint/${Uri.encode(uri.toString())}"
     fun buildPdfRoute(uri: Uri): String = "annotator_pdf/${Uri.encode(uri.toString())}"
     fun buildImageRoute(uri: Uri): String = "viewer_image/${Uri.encode(uri.toString())}"
+    fun buildBankStatementRoute(uri: Uri? = null): String =
+        if (uri != null) "bank_statement_analyser?fileUri=${Uri.encode(uri.toString())}"
+        else "bank_statement_analyser"
 }
 
 @Composable
@@ -61,18 +69,22 @@ fun DocLiteNavigation(
     navController: NavHostController = rememberNavController(),
     initialIntentUri: Uri? = null,
     initialIntentFormat: DocumentFormat? = null,
+    startScreen: com.HrshD1eux.DocLite.models.StartScreen = com.HrshD1eux.DocLite.models.StartScreen.HOME,
+    onIntentConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Routes.HOME
 
-    LaunchedEffect(initialIntentUri) {
+    LaunchedEffect(initialIntentUri, initialIntentFormat) {
         if (initialIntentUri != null && initialIntentFormat != null) {
             navigateToFormatEditor(navController, initialIntentUri, initialIntentFormat)
+            onIntentConsumed()
         }
     }
 
     val showBottomNav = currentRoute in listOf(Routes.HOME, Routes.FILE_MANAGER, Routes.SETTINGS)
+    val startDestination = if (startScreen == com.HrshD1eux.DocLite.models.StartScreen.FILE_MANAGER) Routes.FILE_MANAGER else Routes.HOME
 
     Scaffold(
         bottomBar = {
@@ -82,7 +94,7 @@ fun DocLiteNavigation(
                     onTabSelected = { tab ->
                         if (currentRoute != tab.route) {
                             navController.navigate(tab.route) {
-                                popUpTo(Routes.HOME) { saveState = true }
+                                popUpTo(startDestination) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
@@ -95,7 +107,7 @@ fun DocLiteNavigation(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Routes.HOME,
+            startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Routes.HOME) {
@@ -111,14 +123,30 @@ fun DocLiteNavigation(
                     },
                     onOpenBankStatementAnalyser = {
                         navController.navigate(Routes.BANK_STATEMENT_ANALYSER)
+                    },
+                    onAnalyzeStatement = { file ->
+                        val uri = Uri.parse(file.uriString)
+                        navController.navigate(Routes.buildBankStatementRoute(uri))
                     }
                 )
             }
 
-            composable(Routes.BANK_STATEMENT_ANALYSER) {
+            composable(
+                route = Routes.BANK_STATEMENT_ANALYSER_ROUTE,
+                arguments = listOf(
+                    navArgument("fileUri") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { backStackEntry ->
+                val uriString = backStackEntry.arguments?.getString("fileUri")
+                val initialUri = uriString?.let { Uri.parse(Uri.decode(it)) }
                 val bankViewModel: BankStatementViewModel = viewModel(factory = AppViewModelProvider.Factory)
                 BankStatementAnalyserScreen(
                     viewModel = bankViewModel,
+                    initialUri = initialUri,
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -130,6 +158,10 @@ fun DocLiteNavigation(
                     onOpenFile = { file ->
                         val uri = Uri.parse(file.uriString)
                         navigateToFormatEditor(navController, uri, file.format)
+                    },
+                    onAnalyzeStatement = { file ->
+                        val uri = Uri.parse(file.uriString)
+                        navController.navigate(Routes.buildBankStatementRoute(uri))
                     }
                 )
             }
@@ -196,6 +228,20 @@ fun DocLiteNavigation(
             }
 
             composable(
+                route = Routes.EDITOR_TEXT,
+                arguments = listOf(navArgument("fileUri") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val encodedUri = backStackEntry.arguments?.getString("fileUri") ?: ""
+                val uri = Uri.parse(Uri.decode(encodedUri))
+                val textViewModel: TextViewModel = viewModel(factory = AppViewModelProvider.Factory)
+                TextEditorScreen(
+                    viewModel = textViewModel,
+                    fileUri = uri,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
                 route = Routes.VIEWER_IMAGE,
                 arguments = listOf(navArgument("fileUri") { type = NavType.StringType })
             ) { backStackEntry ->
@@ -215,6 +261,7 @@ fun DocLiteNavigation(
 private fun navigateToFormatEditor(navController: NavHostController, uri: Uri, format: DocumentFormat) {
     when (format) {
         DocumentFormat.WORD -> navController.navigate(Routes.buildWordRoute(uri))
+        DocumentFormat.TXT -> navController.navigate(Routes.buildTextRoute(uri))
         DocumentFormat.EXCEL -> navController.navigate(Routes.buildExcelRoute(uri))
         DocumentFormat.POWERPOINT -> navController.navigate(Routes.buildPowerPointRoute(uri))
         DocumentFormat.PDF -> navController.navigate(Routes.buildPdfRoute(uri))

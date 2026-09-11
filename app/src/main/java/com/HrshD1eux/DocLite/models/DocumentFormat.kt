@@ -8,10 +8,9 @@ enum class DocumentFormat(
     val mimeTypes: List<String>,
     val accentColor: Long
 ) {
-    WORD("Word", listOf("docx", "doc", "txt", "rtf"), listOf(
+    WORD("Word", listOf("docx", "doc", "rtf"), listOf(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/msword",
-        "text/plain",
         "application/rtf",
         "text/rtf"
     ), 0xFF2B579A),
@@ -28,6 +27,8 @@ enum class DocumentFormat(
     ), 0xFFD24726),
     
     PDF("PDF", listOf("pdf"), listOf("application/pdf"), 0xFFCC292B),
+
+    TXT("Text", listOf("txt", "log", "md"), listOf("text/plain", "text/markdown"), 0xFF455A64),
     
     IMAGE("Image", listOf("jpg", "jpeg", "png", "webp", "gif"), listOf(
         "image/jpeg", "image/png", "image/webp", "image/gif"

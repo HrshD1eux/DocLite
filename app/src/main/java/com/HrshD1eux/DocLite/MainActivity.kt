@@ -30,7 +30,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val app = application as DocLiteApplication
-        handleIntent(intent)
+        if (savedInstanceState == null) {
+            handleIntent(intent)
+        }
 
         setContent {
             val settings by app.container.settingsRepository.appSettingsFlow.collectAsStateWithLifecycle(
@@ -45,7 +47,11 @@ class MainActivity : ComponentActivity() {
                 ) {
                     DocLiteNavigation(
                         initialIntentUri = intentData.first,
-                        initialIntentFormat = intentData.second
+                        initialIntentFormat = intentData.second,
+                        startScreen = settings.startScreen,
+                        onIntentConsumed = {
+                            _intentDataFlow.value = Pair(null, null)
+                        }
                     )
                 }
             }
@@ -77,7 +83,8 @@ class MainActivity : ComponentActivity() {
             if (mimeType != null) {
                 format = when {
                     mimeType.contains("pdf") -> DocumentFormat.PDF
-                    mimeType.contains("word") || mimeType.contains("document") || mimeType.contains("text/plain") -> DocumentFormat.WORD
+                    mimeType.contains("text/plain") || mimeType.contains("text/markdown") -> DocumentFormat.TXT
+                    mimeType.contains("word") || mimeType.contains("document") -> DocumentFormat.WORD
                     mimeType.contains("excel") || mimeType.contains("sheet") || mimeType.contains("csv") -> DocumentFormat.EXCEL
                     mimeType.contains("powerpoint") || mimeType.contains("presentation") -> DocumentFormat.POWERPOINT
                     mimeType.startsWith("image/") -> DocumentFormat.IMAGE

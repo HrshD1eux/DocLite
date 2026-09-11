@@ -50,6 +50,7 @@ data class WordDocument(
     val fileUri: String,
     val paragraphs: List<Paragraph> = listOf(Paragraph()),
     val wordCount: Int = 0,
-    val characterCount: Int = 0
+    val characterCount: Int = 0,
+    val hasUnrecognizedElements: Boolean = false
 )
 

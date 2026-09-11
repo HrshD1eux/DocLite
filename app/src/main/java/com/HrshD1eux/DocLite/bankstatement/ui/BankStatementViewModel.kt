@@ -38,7 +38,7 @@ class BankStatementViewModel(context: Context) : ViewModel() {
                 val result = parser.parseStatement(uri, password)
                 _uiState.value = BankStatementUiState.Success(analysisResult = result)
             } catch (e: PasswordRequiredException) {
-                val fileName = uri.lastPathSegment ?: "Excel File"
+                val fileName = uri.lastPathSegment ?: "Protected Statement"
                 _uiState.value = BankStatementUiState.PasswordRequired(
                     fileUri = uri,
                     fileName = fileName,
@@ -46,7 +46,7 @@ class BankStatementViewModel(context: Context) : ViewModel() {
                 )
             } catch (e: Exception) {
                 _uiState.value = BankStatementUiState.Error(
-                    e.localizedMessage ?: "Failed to process bank statement. Please verify the Excel format."
+                    e.localizedMessage ?: "Failed to process bank statement. Please verify the document format."
                 )
             }
         }
@@ -54,7 +54,7 @@ class BankStatementViewModel(context: Context) : ViewModel() {
 
     fun submitPassword(uri: Uri, password: String) {
         if (password.isBlank()) {
-            val fileName = uri.lastPathSegment ?: "Excel File"
+            val fileName = uri.lastPathSegment ?: "Protected Statement"
             _uiState.value = BankStatementUiState.PasswordRequired(
                 fileUri = uri,
                 fileName = fileName,

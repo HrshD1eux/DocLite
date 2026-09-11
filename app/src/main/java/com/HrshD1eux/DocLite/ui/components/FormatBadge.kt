@@ -33,6 +33,7 @@ fun getFormatColors(format: DocumentFormat): Pair<Color, Color> {
         DocumentFormat.PDF -> PdfBg to PdfText
         DocumentFormat.POWERPOINT -> PptBg to PptText
         DocumentFormat.IMAGE -> ImageBg to ImageText
+        DocumentFormat.TXT -> Color(0xFFECEFF1) to Color(0xFF37474F)
     }
 }
 
@@ -43,6 +44,7 @@ fun getFormatBadgeText(format: DocumentFormat): String {
         DocumentFormat.PDF -> "PDF"
         DocumentFormat.POWERPOINT -> "PPTX"
         DocumentFormat.IMAGE -> "IMG"
+        DocumentFormat.TXT -> "TXT"
     }
 }
 

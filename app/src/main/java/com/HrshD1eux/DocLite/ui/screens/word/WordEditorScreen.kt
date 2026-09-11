@@ -1,7 +1,9 @@
 package com.HrshD1eux.DocLite.ui.screens.word
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,14 +20,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatAlignCenter
-import androidx.compose.material.icons.filled.FormatAlignJustify
-import androidx.compose.material.icons.filled.FormatAlignLeft
-import androidx.compose.material.icons.filled.FormatAlignRight
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatSize
@@ -33,6 +34,9 @@ import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,16 +53,20 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,6 +83,10 @@ fun WordEditorScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+    var renameInput by remember { mutableStateOf("") }
+
     LaunchedEffect(fileUri) {
         viewModel.loadDocument(fileUri)
     }
@@ -86,33 +98,146 @@ fun WordEditorScreen(
         }
     }
 
+    val successState = state as? WordUiState.Success
+    val hasUnsavedChanges = successState?.canUndo == true
+
+    BackHandler {
+        if (hasUnsavedChanges) {
+            showUnsavedDialog = true
+        } else {
+            onBack()
+        }
+    }
+
+    if (showUnsavedDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnsavedDialog = false },
+            title = { Text("Unsaved Changes") },
+            text = { Text("You have unsaved changes in this document. Do you want to discard them and exit?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUnsavedDialog = false
+                        onBack()
+                    }
+                ) {
+                    Text("Discard & Exit", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.saveDocument()
+                        showUnsavedDialog = false
+                        onBack()
+                    }
+                ) {
+                    Text("Save & Exit")
+                }
+            }
+        )
+    }
+
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename Document") },
+            text = {
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    label = { Text("Document name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("rename_word_input")
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (renameInput.isNotBlank()) {
+                            viewModel.renameDocument(renameInput.trim())
+                        }
+                        showRenameDialog = false
+                    }
+                ) {
+                    Text("Rename")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    val docTitle = (state as? WordUiState.Success)?.document?.title ?: "Word Editor"
-                    Text(
-                        text = docTitle,
-                        maxLines = 1,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                    )
+                    val docTitle = successState?.document?.title ?: "Word Editor"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable {
+                                renameInput = docTitle.substringBeforeLast(".")
+                                showRenameDialog = true
+                            }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = docTitle,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.DriveFileRenameOutline,
+                            contentDescription = "Rename Document",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (hasUnsavedChanges) {
+                            Text(
+                                text = " •",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = {
+                            if (hasUnsavedChanges) showUnsavedDialog = true else onBack()
+                        }
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    val successState = state as? WordUiState.Success
                     if (successState != null) {
-                        IconButton(onClick = viewModel::toggleEditMode) {
-                            Icon(
-                                imageVector = if (successState.isEditing) Icons.Default.Visibility else Icons.Default.Edit,
-                                contentDescription = if (successState.isEditing) "View Mode" else "Edit Mode"
-                            )
+                        val canEdit = !successState.document.hasUnrecognizedElements
+                        if (canEdit) {
+                            IconButton(onClick = viewModel::toggleEditMode) {
+                                Icon(
+                                    imageVector = if (successState.isEditing) Icons.Default.Visibility else Icons.Default.Edit,
+                                    contentDescription = if (successState.isEditing) "View Mode" else "Edit Mode"
+                                )
+                            }
                         }
-                        IconButton(onClick = viewModel::saveDocument) {
-                            Icon(Icons.Default.Save, contentDescription = "Save Document")
+                        IconButton(
+                            onClick = viewModel::saveDocument,
+                            enabled = canEdit
+                        ) {
+                            Icon(
+                                Icons.Default.Save, 
+                                contentDescription = "Save Document",
+                                tint = if (canEdit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
                         }
                     }
                 }
@@ -132,6 +257,16 @@ fun WordEditorScreen(
             }
 
             is WordUiState.Error -> {
+                AlertDialog(
+                    onDismissRequest = onBack,
+                    title = { Text("Unsupported or corrupted file format") },
+                    text = { Text(uiState.message) },
+                    confirmButton = {
+                        TextButton(onClick = onBack) {
+                            Text("Go Back")
+                        }
+                    }
+                )
                 Box(
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center
@@ -150,6 +285,30 @@ fun WordEditorScreen(
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
+                    if (uiState.document.hasUnrecognizedElements) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Read-Only: Document contains unsupported elements (tables, images, or formatting). Editing and saving are disabled to prevent data loss.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
                     // Stats Bar
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -229,7 +388,7 @@ fun WordEditorScreen(
                                         containerColor = if (uiState.currentAlignment == TextAlignment.LEFT) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                                     )
                                 ) {
-                                    Icon(Icons.Default.FormatAlignLeft, contentDescription = "Align Left")
+                                    Icon(Icons.AutoMirrored.Filled.FormatAlignLeft, contentDescription = "Align Left")
                                 }
 
                                 IconButton(

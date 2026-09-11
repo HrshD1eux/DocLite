@@ -8,6 +8,7 @@ import com.HrshD1eux.DocLite.models.DocumentFile
 import com.HrshD1eux.DocLite.models.DocumentFormat
 import com.HrshD1eux.DocLite.models.Sheet
 import com.HrshD1eux.DocLite.models.SpreadsheetDocument
+import com.HrshD1eux.DocLite.office.excel.FormulaEngine
 import com.HrshD1eux.DocLite.repository.DocumentRepository
 import com.HrshD1eux.DocLite.repository.FileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,8 @@ class ExcelViewModel(
     private val documentRepository: DocumentRepository,
     private val fileRepository: FileRepository
 ) : ViewModel() {
+
+    private val formulaEngine = FormulaEngine()
 
     private val _uiState = MutableStateFlow<ExcelUiState>(ExcelUiState.Loading)
     val uiState: StateFlow<ExcelUiState> = _uiState.asStateFlow()
@@ -98,9 +101,33 @@ class ExcelViewModel(
         val updatedCells = currentSheet.cells.toMutableMap()
 
         if (input.startsWith("=")) {
-            updatedCells[key] = Cell(row = r, col = c, value = "", formula = input)
+            val eval = formulaEngine.evaluateFormula(input, currentSheet)
+            updatedCells[key] = Cell(
+                row = r,
+                col = c,
+                value = input,
+                formula = input,
+                evaluatedValue = eval
+            )
         } else {
-            updatedCells[key] = Cell(row = r, col = c, value = input, formula = "")
+            updatedCells[key] = Cell(
+                row = r,
+                col = c,
+                value = input,
+                formula = "",
+                evaluatedValue = input
+            )
+        }
+
+        // Re-evaluate dependent formula cells in this sheet
+        val tempSheet = currentSheet.copy(cells = updatedCells)
+        for ((cellKey, cell) in updatedCells) {
+            if (cell.formula.isNotEmpty() && cellKey != key) {
+                val reevaluated = formulaEngine.evaluateFormula(cell.formula, tempSheet)
+                if (reevaluated != cell.evaluatedValue) {
+                    updatedCells[cellKey] = cell.copy(evaluatedValue = reevaluated)
+                }
+            }
         }
 
         val updatedSheet = currentSheet.copy(cells = updatedCells)

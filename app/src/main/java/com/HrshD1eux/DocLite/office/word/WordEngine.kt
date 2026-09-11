@@ -9,8 +9,11 @@ import com.HrshD1eux.DocLite.models.TextStyle
 import com.HrshD1eux.DocLite.models.WordDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.poi.openxml4j.opc.OPCPackage
+import org.apache.poi.openxml4j.opc.PackageAccess
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment
 import org.apache.poi.xwpf.usermodel.XWPFDocument
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -18,103 +21,118 @@ class WordEngine(private val context: Context) {
 
     suspend fun loadDocument(uri: Uri): WordDocument = withContext(Dispatchers.IO) {
         val fileName = getFileName(uri)
-        
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+
+        if (ext == "doc") {
+            throw UnsupportedOperationException("Legacy Word 97-2003 (.doc) format is not supported. Please convert to .docx.")
+        }
+
+        val tempFile = File.createTempFile("docx_cache_", ".tmp", context.cacheDir)
         try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                val document = XWPFDocument(inputStream)
-                val paragraphs = mutableListOf<Paragraph>()
-                var wordCount = 0
-                var charCount = 0
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
 
-                for (xwpfParagraph in document.paragraphs) {
-                    val runs = mutableListOf<TextRun>()
-                    
-                    for (xwpfRun in xwpfParagraph.runs) {
-                        val text = xwpfRun.text() ?: continue
-                        if (text.isEmpty()) continue
-                        
-                        val isBold = xwpfRun.isBold
-                        val isItalic = xwpfRun.isItalic
-                        val isUnderline = xwpfRun.underline != org.apache.poi.xwpf.usermodel.UnderlinePatterns.NONE
-                        val fontSize = xwpfRun.fontSize.takeIf { it > 0 }?.toFloat() ?: 16f
-                        val color = xwpfRun.color?.let { "#$it" } ?: "#1C1B1F"
+            val pkg = try {
+                OPCPackage.open(tempFile, PackageAccess.READ)
+            } catch (e: org.apache.poi.openxml4j.exceptions.NotOfficeXmlFileException) {
+                throw IllegalArgumentException("Unsupported or corrupted Word document format. The file is not a valid .docx document.", e)
+            } catch (e: org.apache.poi.openxml4j.exceptions.OLE2NotOfficeXmlFileException) {
+                throw UnsupportedOperationException("Legacy Word binary format (.doc) is not supported. Please convert to .docx.", e)
+            }
 
-                        runs.add(TextRun(
-                            text = text,
-                            style = TextStyle(isBold, isItalic, isUnderline, fontSize, color)
-                        ))
-                        
-                        charCount += text.length
-                    }
-                    
-                    val plainText = xwpfParagraph.text
-                    if (plainText.isNotBlank()) {
-                        wordCount += plainText.split("\\s+".toRegex()).count { it.isNotBlank() }
-                    }
-
-                    val alignment = when (xwpfParagraph.alignment) {
-                        ParagraphAlignment.CENTER -> TextAlignment.CENTER
-                        ParagraphAlignment.RIGHT -> TextAlignment.RIGHT
-                        ParagraphAlignment.BOTH -> TextAlignment.JUSTIFY
-                        else -> TextAlignment.LEFT
-                    }
-
-                    val style = xwpfParagraph.style ?: ""
-                    val isHeader = style.contains("Heading")
-
-                    paragraphs.add(Paragraph(
-                        runs = runs.ifEmpty { listOf(TextRun("")) },
-                        alignment = alignment,
-                        isHeader = isHeader
-                    ))
+            pkg.use { opcPackage ->
+                val document = try {
+                    XWPFDocument(opcPackage)
+                } catch (e: OutOfMemoryError) {
+                    throw IllegalStateException("This Word document is too large to load in available device memory.", e)
+                } catch (e: Exception) {
+                    throw IllegalArgumentException("Failed to open Word document: ${e.localizedMessage ?: "Corrupted file"}", e)
                 }
 
-                WordDocument(
-                    title = fileName,
-                    fileUri = uri.toString(),
-                    paragraphs = paragraphs.ifEmpty { listOf(Paragraph()) },
-                    wordCount = wordCount,
-                    characterCount = charCount
-                )
-            } ?: createEmptyDocument(fileName, uri)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            createEmptyDocument(fileName, uri)
+                document.use { doc ->
+                    val hasTables = doc.tables.isNotEmpty()
+                    val hasPictures = doc.allPictures.isNotEmpty()
+                    val hasUnrecognizedElements = hasTables || hasPictures || (doc.bodyElements.size > doc.paragraphs.size)
+
+                    val paragraphs = mutableListOf<Paragraph>()
+                    var wordCount = 0
+                    var charCount = 0
+
+                    for (xwpfParagraph in doc.paragraphs) {
+                        val runs = mutableListOf<TextRun>()
+
+                        for (xwpfRun in xwpfParagraph.runs) {
+                            val text = xwpfRun.text() ?: continue
+                            if (text.isEmpty()) continue
+
+                            val isBold = xwpfRun.isBold
+                            val isItalic = xwpfRun.isItalic
+                            val isUnderline = xwpfRun.underline != org.apache.poi.xwpf.usermodel.UnderlinePatterns.NONE
+                            val fontSize = xwpfRun.fontSize.takeIf { it > 0 }?.toFloat() ?: 16f
+                            val color = xwpfRun.color?.let { "#$it" } ?: "#1C1B1F"
+
+                            runs.add(
+                                TextRun(
+                                    text = text,
+                                    style = TextStyle(isBold, isItalic, isUnderline, fontSize, color)
+                                )
+                            )
+
+                            charCount += text.length
+                        }
+
+                        val plainText = xwpfParagraph.text
+                        if (plainText.isNotBlank()) {
+                            wordCount += plainText.split("\\s+".toRegex()).count { it.isNotBlank() }
+                        }
+
+                        val alignment = when (xwpfParagraph.alignment) {
+                            ParagraphAlignment.CENTER -> TextAlignment.CENTER
+                            ParagraphAlignment.RIGHT -> TextAlignment.RIGHT
+                            ParagraphAlignment.BOTH -> TextAlignment.JUSTIFY
+                            else -> TextAlignment.LEFT
+                        }
+
+                        val style = xwpfParagraph.style ?: ""
+                        val isHeader = style.contains("Heading")
+
+                        paragraphs.add(
+                            Paragraph(
+                                runs = runs.ifEmpty { listOf(TextRun("")) },
+                                alignment = alignment,
+                                isHeader = isHeader
+                            )
+                        )
+                    }
+
+                    WordDocument(
+                        title = fileName,
+                        fileUri = uri.toString(),
+                        paragraphs = paragraphs.ifEmpty { listOf(Paragraph()) },
+                        wordCount = wordCount,
+                        characterCount = charCount,
+                        hasUnrecognizedElements = hasUnrecognizedElements
+                    )
+                }
+            }
+        } finally {
+            tempFile.delete()
         }
     }
 
-    private fun createEmptyDocument(fileName: String, uri: Uri): WordDocument {
-        return WordDocument(
-            title = fileName,
-            fileUri = uri.toString(),
-            paragraphs = listOf(Paragraph(runs = listOf(TextRun("Welcome to your document. Tap edit to start typing."))))
-        )
-    }
-
     suspend fun saveDocument(uri: Uri, document: WordDocument): Boolean = withContext(Dispatchers.IO) {
+        if (document.hasUnrecognizedElements) {
+            throw IllegalStateException("Cannot save: Document contains unsupported elements (tables, images, or special styles) that would be stripped.")
+        }
         try {
-            var doc: XWPFDocument? = null
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                try {
-                    doc = XWPFDocument(inputStream)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            if (doc == null) {
-                doc = XWPFDocument()
-            }
-
-            doc?.let { xwpf ->
-                // Clear existing paragraphs for a full overwrite from the app model
-                while (xwpf.paragraphs.size > 0) {
-                    xwpf.removeBodyElement(xwpf.getPosOfParagraph(xwpf.paragraphs[0]))
-                }
-
+            val xwpf = XWPFDocument()
+            try {
                 document.paragraphs.forEach { paraModel ->
                     val xwpfParagraph = xwpf.createParagraph()
-                    
+
                     xwpfParagraph.alignment = when (paraModel.alignment) {
                         TextAlignment.CENTER -> ParagraphAlignment.CENTER
                         TextAlignment.RIGHT -> ParagraphAlignment.RIGHT
@@ -131,7 +149,7 @@ class WordEngine(private val context: Context) {
                             xwpfRun.underline = org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE
                         }
                         xwpfRun.fontSize = runModel.style.fontSizeSp.toInt()
-                        
+
                         val colorHex = runModel.style.fontColorHex.removePrefix("#")
                         if (colorHex.length == 6) {
                             xwpfRun.setColor(colorHex)
@@ -141,10 +159,14 @@ class WordEngine(private val context: Context) {
 
                 context.contentResolver.openOutputStream(uri, "rwt")?.use { outputStream ->
                     xwpf.write(outputStream)
-                }
-                xwpf.close()
+                } ?: return@withContext false
                 true
-            } ?: false
+            } finally {
+                xwpf.close()
+            }
+        } catch (e: OutOfMemoryError) {
+            e.printStackTrace()
+            false
         } catch (e: Exception) {
             e.printStackTrace()
             false

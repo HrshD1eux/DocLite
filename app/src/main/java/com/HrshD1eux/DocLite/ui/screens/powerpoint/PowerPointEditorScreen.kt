@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -100,8 +103,16 @@ fun PowerPointEditorScreen(
                 actions = {
                     val successState = state as? PowerPointUiState.Success
                     if (successState != null) {
-                        IconButton(onClick = viewModel::savePresentation) {
-                            Icon(Icons.Default.Save, contentDescription = "Save Presentation")
+                        val canSave = !successState.document.hasUnrecognizedElements
+                        IconButton(
+                            onClick = viewModel::savePresentation,
+                            enabled = canSave
+                        ) {
+                            Icon(
+                                Icons.Default.Save, 
+                                contentDescription = "Save Presentation",
+                                tint = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
                         }
                     }
                 }
@@ -121,6 +132,16 @@ fun PowerPointEditorScreen(
             }
 
             is PowerPointUiState.Error -> {
+                AlertDialog(
+                    onDismissRequest = onBack,
+                    title = { Text("Unsupported or corrupted file format") },
+                    text = { Text(uiState.message) },
+                    confirmButton = {
+                        TextButton(onClick = onBack) {
+                            Text("Go Back")
+                        }
+                    }
+                )
                 Box(
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center
@@ -138,6 +159,30 @@ fun PowerPointEditorScreen(
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
+                    if (uiState.document.hasUnrecognizedElements) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Read-Only: Presentation contains unsupported elements (images, shapes, or layouts). Saving is disabled to prevent data loss.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
                     // Slide Strip / Carousel
                     Surface(
                         modifier = Modifier.fillMaxWidth(),

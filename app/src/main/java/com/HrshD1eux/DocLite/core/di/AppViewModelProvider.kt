@@ -13,6 +13,7 @@ import com.HrshD1eux.DocLite.ui.screens.image.ImageViewModel
 import com.HrshD1eux.DocLite.ui.screens.pdf.PdfViewModel
 import com.HrshD1eux.DocLite.ui.screens.powerpoint.PowerPointViewModel
 import com.HrshD1eux.DocLite.ui.screens.settings.SettingsViewModel
+import com.HrshD1eux.DocLite.ui.screens.text.TextViewModel
 import com.HrshD1eux.DocLite.ui.screens.word.WordViewModel
 
 object AppViewModelProvider {
@@ -26,6 +27,13 @@ object AppViewModelProvider {
         initializer {
             WordViewModel(
                 documentRepository = docLiteApplication().container.documentRepository,
+                fileRepository = docLiteApplication().container.fileRepository,
+                settingsRepository = docLiteApplication().container.settingsRepository
+            )
+        }
+        initializer {
+            TextViewModel(
+                context = docLiteApplication().applicationContext,
                 fileRepository = docLiteApplication().container.fileRepository
             )
         }

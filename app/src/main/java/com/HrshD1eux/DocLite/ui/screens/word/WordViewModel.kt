@@ -12,9 +12,11 @@ import com.HrshD1eux.DocLite.models.TextStyle
 import com.HrshD1eux.DocLite.models.WordDocument
 import com.HrshD1eux.DocLite.repository.DocumentRepository
 import com.HrshD1eux.DocLite.repository.FileRepository
+import com.HrshD1eux.DocLite.repository.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 sealed interface WordUiState {
@@ -37,7 +39,8 @@ sealed interface WordUiState {
 
 class WordViewModel(
     private val documentRepository: DocumentRepository,
-    private val fileRepository: FileRepository
+    private val fileRepository: FileRepository,
+    private val settingsRepository: SettingsRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<WordUiState>(WordUiState.Loading)
@@ -49,9 +52,22 @@ class WordViewModel(
     fun loadDocument(uri: Uri) {
         viewModelScope.launch {
             _uiState.value = WordUiState.Loading
+            val scaleFactor = try {
+                settingsRepository?.appSettingsFlow?.first()?.fontSizeMode?.scaleFactor ?: 1.0f
+            } catch (e: Exception) { 1.0f }
+            val baseFontSizeSp = 16f * scaleFactor
+
             val result = documentRepository.loadWordDocument(uri)
             result.onSuccess { doc ->
-                _uiState.value = WordUiState.Success(document = doc)
+                val isNewDoc = doc.paragraphs.size <= 1 && (
+                    doc.paragraphs.firstOrNull()?.getPlainText()?.contains("Welcome to your new DocLite document") == true ||
+                    doc.paragraphs.firstOrNull()?.getPlainText()?.isBlank() == true
+                )
+                _uiState.value = WordUiState.Success(
+                    document = doc,
+                    fontSizeSp = baseFontSizeSp,
+                    isEditing = isNewDoc
+                )
                 // Record in recent files
                 fileRepository.recordRecentFile(
                     DocumentFile(
@@ -79,9 +95,12 @@ class WordViewModel(
         val currentState = _uiState.value as? WordUiState.Success ?: return
         val currentParagraphs = currentState.document.paragraphs.toMutableList()
         if (index in currentParagraphs.indices) {
+            val p = currentParagraphs[index]
+            val oldText = p.getPlainText()
+            if (oldText == text) return
+
             pushUndo(currentParagraphs)
 
-            val p = currentParagraphs[index]
             val updatedRun = TextRun(
                 text = text,
                 style = TextStyle(
@@ -94,13 +113,15 @@ class WordViewModel(
             )
             currentParagraphs[index] = p.copy(runs = listOf(updatedRun))
 
-            val wordCount = currentParagraphs.sumOf { p -> p.getPlainText().split("\\s+".toRegex()).filter { it.isNotEmpty() }.size }
-            val charCount = currentParagraphs.sumOf { p -> p.getPlainText().length }
+            val oldWords = if (oldText.isBlank()) 0 else oldText.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
+            val newWords = if (text.isBlank()) 0 else text.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
+            val wordDelta = newWords - oldWords
+            val charDelta = text.length - oldText.length
 
             val updatedDoc = currentState.document.copy(
                 paragraphs = currentParagraphs,
-                wordCount = wordCount,
-                characterCount = charCount
+                wordCount = (currentState.document.wordCount + wordDelta).coerceAtLeast(0),
+                characterCount = (currentState.document.characterCount + charDelta).coerceAtLeast(0)
             )
 
             _uiState.value = currentState.copy(
@@ -176,6 +197,9 @@ class WordViewModel(
     }
 
     private fun pushUndo(paragraphs: List<Paragraph>) {
+        if (undoStack.size >= 25) {
+            undoStack.removeAt(0)
+        }
         undoStack.add(paragraphs.toList())
         redoStack.clear()
     }
@@ -191,6 +215,39 @@ class WordViewModel(
                 _uiState.value = currentState.copy(saveStatus = "Document Saved!")
             } else {
                 _uiState.value = currentState.copy(saveStatus = "Failed to Save Document")
+            }
+        }
+    }
+
+    fun renameDocument(newName: String) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        viewModelScope.launch {
+            val formattedName = if (newName.endsWith(".docx", ignoreCase = true)) newName else "$newName.docx"
+            val uri = Uri.parse(currentState.document.fileUri)
+            val dummyFile = DocumentFile(
+                id = currentState.document.fileUri,
+                name = currentState.document.title,
+                path = uri.path ?: "",
+                uriString = currentState.document.fileUri,
+                sizeBytes = 0,
+                lastModified = System.currentTimeMillis(),
+                format = DocumentFormat.WORD
+            )
+            val success = fileRepository.renameFile(dummyFile, formattedName)
+            if (success) {
+                val oldFile = java.io.File(uri.path ?: "")
+                val newFile = java.io.File(oldFile.parentFile, formattedName)
+                val newUri = Uri.fromFile(newFile).toString()
+                val updatedDoc = currentState.document.copy(
+                    title = formattedName,
+                    fileUri = newUri
+                )
+                _uiState.value = currentState.copy(
+                    document = updatedDoc,
+                    saveStatus = "Renamed to $formattedName"
+                )
+            } else {
+                _uiState.value = currentState.copy(saveStatus = "Failed to rename document")
             }
         }
     }
