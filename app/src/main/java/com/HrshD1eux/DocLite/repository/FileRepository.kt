@@ -57,6 +57,8 @@ class FileRepository(
     ) { entities, protectedUris ->
         val protectedSet = protectedUris.toSet()
         entities.map { entity ->
+            val format = DocumentFormat.entries.firstOrNull { it.name.equals(entity.formatName, ignoreCase = true) }
+                ?: DocumentFormat.fromExtension(entity.name.substringAfterLast('.', ""))
             DocumentFile(
                 id = entity.uriString,
                 name = entity.name,
@@ -64,7 +66,7 @@ class FileRepository(
                 uriString = entity.uriString,
                 sizeBytes = entity.sizeBytes,
                 lastModified = entity.lastOpenedTimestamp,
-                format = DocumentFormat.valueOf(entity.formatName),
+                format = format,
                 isPasswordProtected = protectedSet.contains(entity.uriString)
             )
         }
@@ -76,6 +78,8 @@ class FileRepository(
     ) { entities, protectedUris ->
         val protectedSet = protectedUris.toSet()
         entities.map { entity ->
+            val format = DocumentFormat.entries.firstOrNull { it.name.equals(entity.formatName, ignoreCase = true) }
+                ?: DocumentFormat.fromExtension(entity.name.substringAfterLast('.', ""))
             DocumentFile(
                 id = entity.uriString,
                 name = entity.name,
@@ -83,7 +87,7 @@ class FileRepository(
                 uriString = entity.uriString,
                 sizeBytes = entity.sizeBytes,
                 lastModified = entity.addedTimestamp,
-                format = DocumentFormat.valueOf(entity.formatName),
+                format = format,
                 isFavorite = true,
                 isPasswordProtected = protectedSet.contains(entity.uriString)
             )
@@ -271,10 +275,15 @@ class FileRepository(
                     file.writeText("Welcome to your new DocLite document. Start writing your content here.\n", Charsets.UTF_8)
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            // Fallback to empty file if POI fails
-            if (!file.exists()) file.createNewFile()
+        } catch (t: Throwable) {
+            android.util.Log.e("FileRepository", "Failed to write document content: ${t.message}")
+            // Fallback to empty file if document engine initialization fails
+            if (!file.exists()) {
+                try {
+                    file.parentFile?.mkdirs()
+                    file.createNewFile()
+                } catch (ignored: Throwable) {}
+            }
         }
     }
 
@@ -565,12 +574,24 @@ class FileRepository(
             val docsDir = File(context.filesDir, "DocLite_Documents")
             if (!docsDir.exists()) docsDir.mkdirs()
             
-            // Seed Sample Word
-            createNewDocument("Project_Proposal_DocLite", DocumentFormat.WORD)
-            // Seed Sample Excel
-            createNewDocument("Quarterly_Budget_Report", DocumentFormat.EXCEL)
-            // Seed Sample PowerPoint
-            createNewDocument("DocLite_Feature_Deck", DocumentFormat.POWERPOINT)
+            try {
+                // Seed Sample Word
+                createNewDocument("Project_Proposal_DocLite", DocumentFormat.WORD)
+            } catch (t: Throwable) {
+                android.util.Log.w("FileRepository", "Sample Word creation skipped: ${t.message}")
+            }
+            try {
+                // Seed Sample Excel
+                createNewDocument("Quarterly_Budget_Report", DocumentFormat.EXCEL)
+            } catch (t: Throwable) {
+                android.util.Log.w("FileRepository", "Sample Excel creation skipped: ${t.message}")
+            }
+            try {
+                // Seed Sample PowerPoint
+                createNewDocument("DocLite_Feature_Deck", DocumentFormat.POWERPOINT)
+            } catch (t: Throwable) {
+                android.util.Log.w("FileRepository", "Sample PowerPoint creation skipped: ${t.message}")
+            }
 
             prefs.edit().putBoolean("samples_seeded", true).apply()
         }

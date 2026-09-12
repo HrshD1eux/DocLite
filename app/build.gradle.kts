@@ -17,9 +17,11 @@ android {
     minSdk = 26
     targetSdk = 36
     
+    val envVersionName = System.getenv("APP_VERSION_NAME")
+    val envVersionCode = System.getenv("APP_VERSION_CODE")?.toIntOrNull()
     val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-    versionCode = ciRunNumber ?: 1
-    versionName = if (ciRunNumber != null) "1.0.$ciRunNumber" else "1.0.0-dev"
+    versionCode = envVersionCode ?: ciRunNumber ?: 1
+    versionName = envVersionName ?: (if (ciRunNumber != null) "1.0.$ciRunNumber" else "1.0.0-dev")
     
     multiDexEnabled = true
 

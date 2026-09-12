@@ -6,6 +6,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+import android.util.Log
+
 class DocLiteApplication : Application() {
 
     lateinit var container: AppContainer
@@ -15,9 +17,13 @@ class DocLiteApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
 
-        // Seed initial sample documents asynchronously
+        // Seed initial sample documents asynchronously and safely
         CoroutineScope(Dispatchers.IO).launch {
-            container.fileRepository.seedInitialSampleDocumentsIfNeeded()
+            try {
+                container.fileRepository.seedInitialSampleDocumentsIfNeeded()
+            } catch (t: Throwable) {
+                Log.w("DocLiteApplication", "Sample document seeding skipped or failed safely: ${t.message}")
+            }
         }
     }
 }

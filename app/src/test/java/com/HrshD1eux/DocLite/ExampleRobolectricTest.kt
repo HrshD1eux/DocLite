@@ -18,5 +18,14 @@ class ExampleRobolectricTest {
     val appName = context.getString(R.string.app_name)
     assertEquals("DocLite", appName)
   }
+
+  @Test
+  fun `test MainActivity launch without crash`() {
+    val scenario = androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java)
+    scenario.onActivity { activity ->
+      org.junit.Assert.assertNotNull(activity)
+    }
+    scenario.close()
+  }
 }
 
