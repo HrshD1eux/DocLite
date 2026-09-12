@@ -38,14 +38,16 @@ class PowerPointEngine(private val context: Context) {
                 OPCPackage.open(tempFile, PackageAccess.READ)
             } catch (e: org.apache.poi.openxml4j.exceptions.NotOfficeXmlFileException) {
                 throw IllegalArgumentException("Unsupported or corrupted PowerPoint format. The file is not a valid .pptx document.", e)
+            } catch (t: Throwable) {
+                throw IllegalArgumentException("Could not read PowerPoint package: ${t.message ?: "Invalid file"}", t)
             }
 
             val ppt = try {
                 XMLSlideShow(pkg)
             } catch (e: OutOfMemoryError) {
                 throw IllegalStateException("This presentation is too large to open in available device memory.", e)
-            } catch (e: Exception) {
-                throw IllegalArgumentException("Failed to open presentation: ${e.localizedMessage ?: "Corrupted file"}", e)
+            } catch (t: Throwable) {
+                throw IllegalArgumentException("Failed to open presentation: ${t.localizedMessage ?: "Corrupted file"}", t)
             }
 
         val parsedSlides = mutableListOf<Slide>()

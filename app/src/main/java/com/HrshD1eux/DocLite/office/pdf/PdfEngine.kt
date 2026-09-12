@@ -46,16 +46,18 @@ class PdfEngine(private val context: Context) {
     suspend fun getPageAspectRatio(pageIndex: Int): Float = withContext(Dispatchers.IO) {
         synchronized(renderLock) {
             aspectRatioMap[pageIndex]?.let { return@synchronized it }
-            val renderer = pdfRenderer ?: return@synchronized 1.414f
-            if (pageIndex !in 0 until renderer.pageCount) return@synchronized 1.414f
+            val defaultRatio = 595f / 842f // Default A4 portrait width / height
+            val renderer = pdfRenderer ?: return@synchronized defaultRatio
+            if (pageIndex !in 0 until renderer.pageCount) return@synchronized defaultRatio
             try {
                 val page = renderer.openPage(pageIndex)
-                val ratio = page.height.toFloat() / page.width.toFloat().coerceAtLeast(1f)
+                // In Compose Modifier.aspectRatio(ratio), ratio is width / height
+                val ratio = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
                 page.close()
                 aspectRatioMap[pageIndex] = ratio
                 ratio
             } catch (e: Exception) {
-                1.414f
+                defaultRatio
             }
         }
     }

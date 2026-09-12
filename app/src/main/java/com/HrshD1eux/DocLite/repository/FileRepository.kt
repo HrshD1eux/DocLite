@@ -2,7 +2,9 @@ package com.HrshD1eux.DocLite.repository
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import androidx.core.content.ContextCompat
 import com.HrshD1eux.DocLite.database.dao.FavoriteFileDao
 import com.HrshD1eux.DocLite.database.dao.PasswordProtectionDao
 import com.HrshD1eux.DocLite.database.dao.RecentFileDao
@@ -326,25 +328,33 @@ class FileRepository(
             }
         }
 
-        // 2. MediaStore Query
+        // 2. MediaStore Files Query (using DISPLAY_NAME and MIME_TYPE, compliant with Android 10-16)
         val projection = arrayOf(
             android.provider.MediaStore.Files.FileColumns._ID,
-            android.provider.MediaStore.Files.FileColumns.DATA,
-            android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME,
-            android.provider.MediaStore.Files.FileColumns.SIZE,
-            android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED
+            android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
+            android.provider.MediaStore.MediaColumns.SIZE,
+            android.provider.MediaStore.MediaColumns.DATE_MODIFIED,
+            android.provider.MediaStore.MediaColumns.MIME_TYPE
         )
 
-        val selection = "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.doc' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.docx' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.xls' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.xlsx' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.csv' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.ppt' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.pptx' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.txt' OR " +
-                "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE '%.rtf'"
+        val selection = "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.pdf' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.doc' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.docx' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.xls' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.xlsx' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.csv' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.ppt' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.pptx' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.txt' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.rtf' OR " +
+                "${android.provider.MediaStore.Files.FileColumns.MIME_TYPE} IN (" +
+                "'application/pdf', 'application/msword', " +
+                "'application/vnd.openxmlformats-officedocument.wordprocessingml.document', " +
+                "'application/vnd.ms-excel', " +
+                "'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', " +
+                "'application/vnd.ms-powerpoint', " +
+                "'application/vnd.openxmlformats-officedocument.presentationml.presentation', " +
+                "'text/plain', 'text/csv')"
 
         val sortOrder = "${android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
         val queryUri = android.provider.MediaStore.Files.getContentUri("external")
@@ -358,30 +368,26 @@ class FileRepository(
                 sortOrder
             )?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns._ID)
-                val dataCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATA)
                 val nameCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME)
                 val sizeCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.SIZE)
                 val dateModCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED)
 
                 while (cursor.moveToNext()) {
-                    val data = cursor.getString(dataCol) ?: continue
-                    val ext = data.substringAfterLast('.', "").lowercase()
+                    val name = cursor.getString(nameCol) ?: continue
+                    val ext = name.substringAfterLast('.', "").lowercase()
                     if (!allowedExtensions.contains(ext)) continue
 
-                    val fileObj = File(data)
-                    val canonicalKey = try { fileObj.canonicalPath } catch (e: Exception) { data }
-                    val name = cursor.getString(nameCol) ?: fileObj.name
+                    val id = cursor.getLong(idCol)
+                    val contentUri = android.content.ContentUris.withAppendedId(queryUri, id)
+                    val uriStr = contentUri.toString()
                     val size = cursor.getLong(sizeCol)
                     val dateMod = cursor.getLong(dateModCol) * 1000L
                     val format = DocumentFormat.fromExtension(ext)
 
-                    // Prefer Uri.fromFile if file exists, otherwise MediaStore content URI
-                    val uriStr = if (fileObj.exists()) Uri.fromFile(fileObj).toString() else android.content.ContentUris.withAppendedId(queryUri, cursor.getLong(idCol)).toString()
-
-                    foundFiles[canonicalKey] = DocumentFile(
+                    foundFiles[uriStr] = DocumentFile(
                         id = uriStr,
                         name = name,
-                        path = data,
+                        path = uriStr,
                         uriString = uriStr,
                         sizeBytes = size,
                         lastModified = dateMod,
@@ -391,11 +397,68 @@ class FileRepository(
                     )
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            android.util.Log.w("FileRepository", "MediaStore query failed: ${t.message}")
         }
 
-        // 3. App external documents directory (Scoped Storage compliant)
+        // 3. Direct Storage Scan if permissions granted (MANAGE_EXTERNAL_STORAGE on Android 11+ or READ_EXTERNAL_STORAGE on Android <= 10)
+        val hasStorageAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try { Environment.isExternalStorageManager() } catch (t: Throwable) { false }
+        } else {
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+
+        if (hasStorageAccess) {
+            fun scanDirectoryRecursively(dir: File, currentDepth: Int, maxDepth: Int = 3) {
+                if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory || !dir.canRead()) return
+                dir.listFiles()?.forEach { file ->
+                    if (file.isDirectory) {
+                        val dirName = file.name
+                        if (!dirName.startsWith(".") && dirName != "Android" && dirName != "data") {
+                            scanDirectoryRecursively(file, currentDepth + 1, maxDepth)
+                        }
+                    } else if (file.isFile && file.canRead()) {
+                        val ext = file.extension.lowercase()
+                        if (allowedExtensions.contains(ext)) {
+                            val cPath = try { file.canonicalPath } catch (t: Throwable) { file.absolutePath }
+                            if (!foundFiles.containsKey(cPath)) {
+                                val uriStr = Uri.fromFile(file).toString()
+                                val format = DocumentFormat.fromExtension(ext)
+                                foundFiles[cPath] = DocumentFile(
+                                    id = uriStr,
+                                    name = file.name,
+                                    path = file.absolutePath,
+                                    uriString = uriStr,
+                                    sizeBytes = file.length(),
+                                    lastModified = file.lastModified(),
+                                    format = format,
+                                    isDirectory = false,
+                                    isPasswordProtected = protectedUris.contains(uriStr)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            try {
+                // Documents & Downloads public folders
+                val publicDocs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+                val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val rootStorage = Environment.getExternalStorageDirectory()
+
+                scanDirectoryRecursively(publicDocs, currentDepth = 0, maxDepth = 4)
+                scanDirectoryRecursively(publicDownloads, currentDepth = 0, maxDepth = 4)
+                scanDirectoryRecursively(rootStorage, currentDepth = 0, maxDepth = 2)
+            } catch (t: Throwable) {
+                android.util.Log.w("FileRepository", "Direct storage scan error: ${t.message}")
+            }
+        }
+
+        // 4. App external documents directory
         val extDocsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
         extDocsDir?.listFiles()?.forEach { file ->
             if (file.isFile) {
@@ -421,7 +484,7 @@ class FileRepository(
             }
         }
 
-        // 4. Persisted Storage Access Framework (SAF) documents
+        // 5. Persisted Storage Access Framework (SAF) documents
         try {
             val persistedUris = context.contentResolver.persistedUriPermissions
             for (pUri in persistedUris) {
@@ -455,8 +518,8 @@ class FileRepository(
                     }
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            android.util.Log.w("FileRepository", "SAF query error: ${t.message}")
         }
 
         foundFiles.values.sortedByDescending { it.lastModified }

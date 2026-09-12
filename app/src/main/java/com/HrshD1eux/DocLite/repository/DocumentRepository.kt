@@ -30,8 +30,8 @@ class DocumentRepository(
         try {
             val doc = wordEngine.loadDocument(uri)
             Result.success(doc)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 
@@ -39,8 +39,8 @@ class DocumentRepository(
         try {
             val success = wordEngine.saveDocument(uri, document)
             if (success) Result.success(true) else Result.failure(Exception("Failed to save Word document"))
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 
@@ -48,8 +48,8 @@ class DocumentRepository(
         try {
             val sheetDoc = excelEngine.loadSpreadsheet(uri)
             Result.success(sheetDoc)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 
@@ -57,8 +57,8 @@ class DocumentRepository(
         try {
             val success = excelEngine.saveSpreadsheet(uri, document)
             if (success) Result.success(true) else Result.failure(Exception("Failed to save Spreadsheet"))
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 
@@ -66,8 +66,8 @@ class DocumentRepository(
         try {
             val pptDoc = powerPointEngine.loadPresentation(uri)
             Result.success(pptDoc)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 
@@ -75,19 +75,21 @@ class DocumentRepository(
         try {
             val success = powerPointEngine.savePresentation(uri, document)
             if (success) Result.success(true) else Result.failure(Exception("Failed to save Presentation"))
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Result.failure(t)
         }
     }
 
     fun getPdfAnnotationsFlow(fileUri: String): Flow<List<PdfAnnotation>> {
         return pdfAnnotationDao.getAnnotationsForFile(fileUri).map { entities ->
             entities.map { entity ->
+                val type = com.HrshD1eux.DocLite.models.AnnotationType.entries.firstOrNull { it.name == entity.annotationType }
+                    ?: com.HrshD1eux.DocLite.models.AnnotationType.HIGHLIGHT
                 PdfAnnotation(
                     id = entity.id,
                     fileUri = entity.fileUri,
                     pageIndex = entity.pageIndex,
-                    type = com.HrshD1eux.DocLite.models.AnnotationType.valueOf(entity.annotationType),
+                    type = type,
                     colorHex = entity.colorHex,
                     strokeWidthDp = entity.strokeWidthDp,
                     noteText = entity.noteText,

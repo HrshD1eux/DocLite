@@ -87,6 +87,8 @@ dependencies {
 
   implementation(libs.poi)
   implementation(libs.poi.ooxml)
+  implementation(libs.stax.api)
+  implementation(libs.aalto.xml)
   implementation(libs.pdfbox.android)
   implementation(libs.opencsv)
 

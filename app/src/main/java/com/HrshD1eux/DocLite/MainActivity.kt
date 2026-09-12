@@ -78,21 +78,32 @@ class MainActivity : ComponentActivity() {
                 Log.w("MainActivity", "Could not take persistable permission for $uri", e)
             }
             
-            var format: DocumentFormat? = null
+            var displayName: String? = null
+            if (uri.scheme == "content") {
+                try {
+                    contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            displayName = cursor.getString(0)
+                        }
+                    }
+                } catch (ignored: Throwable) {}
+            }
+            val extFromName = (displayName ?: uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase()
             val mimeType = contentResolver.getType(uri)
-            if (mimeType != null) {
-                format = when {
+            val format = if (extFromName.isNotEmpty()) {
+                DocumentFormat.fromExtension(extFromName)
+            } else if (mimeType != null) {
+                when {
                     mimeType.contains("pdf") -> DocumentFormat.PDF
                     mimeType.contains("text/plain") || mimeType.contains("text/markdown") -> DocumentFormat.TXT
-                    mimeType.contains("word") || mimeType.contains("document") -> DocumentFormat.WORD
+                    mimeType.contains("word") || mimeType.contains("msword") || mimeType.contains("document") -> DocumentFormat.WORD
                     mimeType.contains("excel") || mimeType.contains("sheet") || mimeType.contains("csv") -> DocumentFormat.EXCEL
                     mimeType.contains("powerpoint") || mimeType.contains("presentation") -> DocumentFormat.POWERPOINT
                     mimeType.startsWith("image/") -> DocumentFormat.IMAGE
                     else -> DocumentFormat.WORD
                 }
             } else {
-                val ext = uri.path?.substringAfterLast('.', "") ?: ""
-                format = DocumentFormat.fromExtension(ext)
+                DocumentFormat.WORD
             }
             
             _intentDataFlow.value = Pair(uri, format)

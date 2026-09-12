@@ -100,10 +100,21 @@ fun HomeScreen(
         viewModel.refreshScan()
     }
 
+    var showStoragePermissionBanner by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try { !Environment.isExternalStorageManager() } catch (t: Throwable) { false }
+            } else false
+        )
+    }
+
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    showStoragePermissionBanner = try { !Environment.isExternalStorageManager() } catch (t: Throwable) { false }
+                }
                 viewModel.refreshScan()
             }
         }
@@ -138,22 +149,36 @@ fun HomeScreen(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             } catch (e: Exception) {
-                e.printStackTrace()
+                // Not all providers support persistable permissions
             }
             
+            var displayName: String? = null
+            if (uri.scheme == "content") {
+                try {
+                    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            displayName = cursor.getString(0)
+                        }
+                    }
+                } catch (ignored: Throwable) {}
+            }
+            val extFromName = (displayName ?: uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase()
             val mimeType = context.contentResolver.getType(uri)
-            val format = if (mimeType != null) {
+
+            val format = if (extFromName.isNotEmpty()) {
+                DocumentFormat.fromExtension(extFromName)
+            } else if (mimeType != null) {
                 when {
                     mimeType.contains("pdf") -> DocumentFormat.PDF
-                    mimeType.contains("word") || mimeType.contains("document") || mimeType.contains("text/plain") -> DocumentFormat.WORD
+                    mimeType.contains("text/plain") || mimeType.contains("text/markdown") -> DocumentFormat.TXT
+                    mimeType.contains("word") || mimeType.contains("msword") || mimeType.contains("document") -> DocumentFormat.WORD
                     mimeType.contains("excel") || mimeType.contains("sheet") || mimeType.contains("csv") -> DocumentFormat.EXCEL
                     mimeType.contains("powerpoint") || mimeType.contains("presentation") -> DocumentFormat.POWERPOINT
                     mimeType.startsWith("image/") -> DocumentFormat.IMAGE
                     else -> DocumentFormat.WORD
                 }
             } else {
-                val ext = uri.path?.substringAfterLast('.', "") ?: ""
-                DocumentFormat.fromExtension(ext)
+                DocumentFormat.WORD
             }
             onOpenUri(uri, format)
         }
@@ -335,6 +360,58 @@ fun HomeScreen(
                                         tint = Color(0xFF40484B),
                                         modifier = Modifier.size(20.dp)
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    // Storage Permission Banner
+                    if (showStoragePermissionBanner) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Full Device Storage Access",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Grant All Files Access to automatically discover and view all documents across your device's storage.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        TextButton(onClick = { showStoragePermissionBanner = false }) {
+                                            Text("Dismiss")
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                                    data = Uri.parse("package:${context.packageName}")
+                                                }
+                                                try {
+                                                    context.startActivity(intent)
+                                                } catch (e: Exception) {
+                                                    val fallback = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                                    try { context.startActivity(fallback) } catch (ignored: Exception) {}
+                                                }
+                                            }
+                                        ) {
+                                            Text("Enable Access")
+                                        }
+                                    }
                                 }
                             }
                         }

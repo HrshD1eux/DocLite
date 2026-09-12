@@ -15,6 +15,16 @@ class DocLiteApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Configure StAX XML engine for Apache POI on Android ART
+        try {
+            System.setProperty("javax.xml.stream.XMLInputFactory", "com.fasterxml.aalto.stax.InputFactoryImpl")
+            System.setProperty("javax.xml.stream.XMLOutputFactory", "com.fasterxml.aalto.stax.OutputFactoryImpl")
+            System.setProperty("javax.xml.stream.XMLEventFactory", "com.fasterxml.aalto.stax.EventFactoryImpl")
+        } catch (t: Throwable) {
+            Log.w("DocLiteApplication", "Could not set StAX system properties: ${t.message}")
+        }
+
         container = AppContainer(this)
 
         // Seed initial sample documents asynchronously and safely

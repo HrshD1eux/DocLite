@@ -44,8 +44,8 @@ class ExcelEngine(private val context: Context) {
                 throw IllegalArgumentException("Unsupported or corrupted spreadsheet format. The file is not a valid Excel document.", e)
             } catch (e: OutOfMemoryError) {
                 throw IllegalStateException("This spreadsheet is too large to open in available device memory.", e)
-            } catch (e: Exception) {
-                throw IllegalArgumentException("Failed to open spreadsheet: ${e.localizedMessage ?: "Corrupted file"}", e)
+            } catch (t: Throwable) {
+                throw IllegalArgumentException("Failed to open spreadsheet: ${t.localizedMessage ?: "Corrupted file"}", t)
             }
 
         val evaluator = workbook.creationHelper.createFormulaEvaluator()

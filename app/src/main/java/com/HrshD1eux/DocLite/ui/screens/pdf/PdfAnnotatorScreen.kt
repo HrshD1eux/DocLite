@@ -21,6 +21,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -327,20 +329,20 @@ fun PdfAnnotatorScreen(
                                         val zoomChange = event.calculateZoom()
                                         val panChange = event.calculatePan()
 
-                                        if (zoomChange != 1f || panChange != Offset.Zero) {
+                                        if (zoomChange != 1f || (scale > 1.05f && panChange != Offset.Zero)) {
                                             val newScale = (scale * zoomChange).coerceIn(1f, 4f)
-                                            val maxX = (newScale - 1f) * size.width / 2f
-                                            val maxY = (newScale - 1f) * size.height / 2f
-
-                                            panOffset = if (newScale > 1f) {
-                                                Offset(
+                                            if (newScale <= 1.05f) {
+                                                scale = 1f
+                                                panOffset = Offset.Zero
+                                            } else {
+                                                val maxX = (newScale - 1f) * size.width / 2f
+                                                val maxY = (newScale - 1f) * size.height / 2f
+                                                panOffset = Offset(
                                                     x = (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
                                                     y = (panOffset.y + panChange.y).coerceIn(-maxY, maxY)
                                                 )
-                                            } else {
-                                                Offset.Zero
+                                                scale = newScale
                                             }
-                                            scale = newScale
 
                                             // Consume to prevent conflicting scroll
                                             event.changes.forEach {
@@ -349,6 +351,12 @@ fun PdfAnnotatorScreen(
                                         }
                                     }
                                 } while (event.changes.any { it.pressed })
+
+                                // Snap firmly to locked 1.0x on gesture release
+                                if (scale <= 1.05f) {
+                                    scale = 1f
+                                    panOffset = Offset.Zero
+                                }
                             }
                         }
                         .graphicsLayer {
@@ -362,15 +370,14 @@ fun PdfAnnotatorScreen(
                         state = listState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 8.dp)
+                            .padding(horizontal = 6.dp),
+                        contentPadding = PaddingValues(
+                            top = if (controlsVisible) 60.dp else 8.dp,
+                            bottom = if (controlsVisible) 76.dp else 16.dp
+                        )
                     ) {
-                        // Top spacing so content is visible below top bar
-                        item {
-                            Spacer(modifier = Modifier.height(72.dp))
-                        }
-
                         items(uiState.pageCount) { pageIndex ->
-                            val aspectRatioState = produceState(initialValue = 1.414f, pageIndex) {
+                            val aspectRatioState = produceState(initialValue = 595f / 842f, pageIndex) {
                                 value = viewModel.getPageAspectRatio(pageIndex)
                             }
                             val bitmapState = produceState<Bitmap?>(initialValue = null, pageIndex) {
@@ -382,7 +389,7 @@ fun PdfAnnotatorScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
-                                    .shadow(elevation = 3.dp, shape = RoundedCornerShape(2.dp)),
+                                    .shadow(elevation = 2.dp, shape = RoundedCornerShape(2.dp)),
                                 shape = RoundedCornerShape(2.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White)
                             ) {
@@ -397,7 +404,8 @@ fun PdfAnnotatorScreen(
                                         Image(
                                             bitmap = bmp.asImageBitmap(),
                                             contentDescription = "PDF Page ${pageIndex + 1}",
-                                            modifier = Modifier.fillMaxSize()
+                                            contentScale = ContentScale.FillWidth,
+                                            modifier = Modifier.fillMaxWidth()
                                         )
 
                                         // Render Annotation Overlays on top of the rendered PDF page
@@ -435,11 +443,6 @@ fun PdfAnnotatorScreen(
                                     }
                                 }
                             }
-                        }
-
-                        // Bottom spacing for navigation/annotation bar
-                        item {
-                            Spacer(modifier = Modifier.height(84.dp))
                         }
                     }
                 }

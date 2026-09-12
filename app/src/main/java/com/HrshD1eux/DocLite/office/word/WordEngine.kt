@@ -41,6 +41,8 @@ class WordEngine(private val context: Context) {
                 throw IllegalArgumentException("Unsupported or corrupted Word document format. The file is not a valid .docx document.", e)
             } catch (e: org.apache.poi.openxml4j.exceptions.OLE2NotOfficeXmlFileException) {
                 throw UnsupportedOperationException("Legacy Word binary format (.doc) is not supported. Please convert to .docx.", e)
+            } catch (t: Throwable) {
+                throw IllegalArgumentException("Could not read Word package: ${t.message ?: "Invalid file"}", t)
             }
 
             pkg.use { opcPackage ->
@@ -48,8 +50,8 @@ class WordEngine(private val context: Context) {
                     XWPFDocument(opcPackage)
                 } catch (e: OutOfMemoryError) {
                     throw IllegalStateException("This Word document is too large to load in available device memory.", e)
-                } catch (e: Exception) {
-                    throw IllegalArgumentException("Failed to open Word document: ${e.localizedMessage ?: "Corrupted file"}", e)
+                } catch (t: Throwable) {
+                    throw IllegalArgumentException("Failed to open Word document: ${t.localizedMessage ?: "Corrupted or unsupported format"}", t)
                 }
 
                 document.use { doc ->

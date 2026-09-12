@@ -23,10 +23,15 @@
 -dontwarn com.github.virtuald.**
 -keep class org.w3c.dom.** { *; }
 -dontwarn org.w3c.dom.**
--dontwarn java.awt.**
+-keep class com.fasterxml.aalto.** { *; }
+-keep interface com.fasterxml.aalto.** { *; }
+-dontwarn com.fasterxml.aalto.**
+-keep class javax.xml.stream.** { *; }
+-keep interface javax.xml.stream.** { *; }
 -dontwarn javax.xml.stream.**
 -dontwarn javax.xml.namespace.**
 -dontwarn javax.xml.datatype.**
+-dontwarn java.awt.**
 -dontwarn org.apache.logging.log4j.**
 -dontwarn org.slf4j.**
 
