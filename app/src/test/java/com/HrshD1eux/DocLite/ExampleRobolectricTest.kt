@@ -42,5 +42,52 @@ class ExampleRobolectricTest {
     val defaultRatio = 595f / 842f
     org.junit.Assert.assertTrue(defaultRatio in 0.70f..0.71f)
   }
+
+  @Test
+  fun `test UpdateManager semantic version comparison`() {
+    org.junit.Assert.assertTrue(
+      com.HrshD1eux.DocLite.core.update.UpdateManager.isNewerVersion("1.0.1", "v1.0.2")
+    )
+    org.junit.Assert.assertTrue(
+      com.HrshD1eux.DocLite.core.update.UpdateManager.isNewerVersion("v1.0.9", "1.1.0")
+    )
+    org.junit.Assert.assertTrue(
+      com.HrshD1eux.DocLite.core.update.UpdateManager.isNewerVersion("1.9.9", "2.0.0")
+    )
+    org.junit.Assert.assertFalse(
+      com.HrshD1eux.DocLite.core.update.UpdateManager.isNewerVersion("1.0.2", "1.0.2")
+    )
+    org.junit.Assert.assertFalse(
+      com.HrshD1eux.DocLite.core.update.UpdateManager.isNewerVersion("v1.0.3", "v1.0.2")
+    )
+  }
+
+  @Test
+  fun `test WordDocument model with tables and sequential body elements`() {
+    val cells = listOf(
+      com.HrshD1eux.DocLite.models.WordTableCell("Header 1", isHeader = true),
+      com.HrshD1eux.DocLite.models.WordTableCell("Header 2", isHeader = true)
+    )
+    val row = com.HrshD1eux.DocLite.models.WordTableRow(cells)
+    val table = com.HrshD1eux.DocLite.models.WordTable(rows = listOf(row))
+    val para = com.HrshD1eux.DocLite.models.Paragraph(
+      runs = listOf(com.HrshD1eux.DocLite.models.TextRun("Hello Word")),
+      bulletPrefix = "• "
+    )
+    val doc = com.HrshD1eux.DocLite.models.WordDocument(
+      title = "test.docx",
+      fileUri = "content://test.docx",
+      paragraphs = listOf(para),
+      tables = listOf(table),
+      bodyElements = listOf(
+        com.HrshD1eux.DocLite.models.WordBodyElement.ParagraphElement(para),
+        com.HrshD1eux.DocLite.models.WordBodyElement.TableElement(table)
+      )
+    )
+
+    assertEquals(1, doc.tables.size)
+    assertEquals(2, doc.bodyElements.size)
+    assertEquals("• Hello Word", para.getPlainText())
+  }
 }
 

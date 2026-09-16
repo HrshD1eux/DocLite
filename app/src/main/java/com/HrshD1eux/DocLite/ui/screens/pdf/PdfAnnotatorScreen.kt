@@ -30,6 +30,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -289,6 +294,9 @@ fun PdfAnnotatorScreen(
             }
 
             is PdfUiState.Success -> {
+                val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
                 // Main PDF Page Viewport Canvas with Pinch-to-Zoom & Pan
                 Box(
                     modifier = Modifier
@@ -338,8 +346,8 @@ fun PdfAnnotatorScreen(
                                                 val maxX = (newScale - 1f) * size.width / 2f
                                                 val maxY = (newScale - 1f) * size.height / 2f
                                                 panOffset = Offset(
-                                                    x = (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
-                                                    y = (panOffset.y + panChange.y).coerceIn(-maxY, maxY)
+                                                    (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
+                                                    (panOffset.y + panChange.y).coerceIn(-maxY, maxY)
                                                 )
                                                 scale = newScale
                                             }
@@ -372,8 +380,8 @@ fun PdfAnnotatorScreen(
                             .fillMaxSize()
                             .padding(horizontal = 6.dp),
                         contentPadding = PaddingValues(
-                            top = if (controlsVisible) 60.dp else 8.dp,
-                            bottom = if (controlsVisible) 76.dp else 16.dp
+                            top = statusBarTop + if (controlsVisible) 60.dp else 8.dp,
+                            bottom = navBarBottom + if (controlsVisible) 76.dp else 16.dp
                         )
                     ) {
                         items(uiState.pageCount) { pageIndex ->
@@ -454,7 +462,7 @@ fun PdfAnnotatorScreen(
                     exit = fadeOut(),
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 80.dp)
+                        .padding(top = statusBarTop + 68.dp)
                 ) {
                     Surface(
                         modifier = Modifier
@@ -485,7 +493,7 @@ fun PdfAnnotatorScreen(
                     if (uiState.isSearchActive) {
                         // In-Document Search Top Bar
                         Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().statusBarsPadding(),
                             color = MaterialTheme.colorScheme.surface,
                             shadowElevation = 4.dp
                         ) {

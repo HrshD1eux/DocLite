@@ -31,5 +31,9 @@ class AppContainer(private val context: Context) {
     val settingsRepository: SettingsRepository by lazy {
         SettingsRepository(context)
     }
+
+    val updateManager: com.HrshD1eux.DocLite.core.update.UpdateManager by lazy {
+        com.HrshD1eux.DocLite.core.update.UpdateManager(context)
+    }
 }
 

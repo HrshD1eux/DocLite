@@ -1,6 +1,7 @@
 package com.HrshD1eux.DocLite.ui.navigation
 
 import android.net.Uri
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -103,12 +104,13 @@ fun DocLiteNavigation(
                 )
             }
         },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { innerPadding ->
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
         ) {
             composable(Routes.HOME) {
                 val homeViewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)

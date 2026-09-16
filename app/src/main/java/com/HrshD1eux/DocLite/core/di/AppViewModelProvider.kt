@@ -68,7 +68,8 @@ object AppViewModelProvider {
         initializer {
             SettingsViewModel(
                 settingsRepository = docLiteApplication().container.settingsRepository,
-                fileRepository = docLiteApplication().container.fileRepository
+                fileRepository = docLiteApplication().container.fileRepository,
+                updateManager = docLiteApplication().container.updateManager
             )
         }
         initializer {

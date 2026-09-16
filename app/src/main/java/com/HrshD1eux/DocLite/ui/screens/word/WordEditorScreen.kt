@@ -2,7 +2,9 @@ package com.HrshD1eux.DocLite.ui.screens.word
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,10 +69,15 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.HrshD1eux.DocLite.models.TextAlignment
+import com.HrshD1eux.DocLite.models.WordBodyElement
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -302,7 +309,7 @@ fun WordEditorScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Read-Only: Document contains unsupported elements (tables, images, or formatting). Editing and saving are disabled to prevent data loss.",
+                                    text = "Read-Only: Document contains embedded media or special objects. Editing is restricted to prevent media corruption.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
@@ -428,8 +435,8 @@ fun WordEditorScreen(
                                 .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            itemsIndexed(uiState.document.paragraphs) { index, paragraph ->
-                                if (uiState.isEditing) {
+                            if (uiState.isEditing) {
+                                itemsIndexed(uiState.document.paragraphs) { index, paragraph ->
                                     OutlinedTextField(
                                         value = paragraph.getPlainText(),
                                         onValueChange = { newText -> viewModel.updateParagraphText(index, newText) },
@@ -446,17 +453,83 @@ fun WordEditorScreen(
                                             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                                         )
                                     )
-                                } else {
-                                    Text(
-                                        text = paragraph.getPlainText(),
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontSize = paragraph.runs.firstOrNull()?.style?.fontSizeSp?.sp ?: 16.sp,
-                                            fontWeight = if (paragraph.runs.firstOrNull()?.style?.isBold == true) FontWeight.Bold else if (paragraph.isHeader) FontWeight.Bold else FontWeight.Normal,
-                                            textAlign = paragraph.alignment.toComposeTextAlign()
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                                }
+                            } else {
+                                val elements = uiState.document.bodyElements.ifEmpty {
+                                    uiState.document.paragraphs.map { WordBodyElement.ParagraphElement(it) }
+                                }
+                                items(elements) { element ->
+                                    when (element) {
+                                        is WordBodyElement.ParagraphElement -> {
+                                            val paragraph = element.paragraph
+                                            val annotatedText = buildAnnotatedString {
+                                                if (!paragraph.bulletPrefix.isNullOrEmpty()) {
+                                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+                                                        append(paragraph.bulletPrefix)
+                                                    }
+                                                }
+                                                paragraph.runs.forEach { run ->
+                                                    val spanStyle = SpanStyle(
+                                                        fontWeight = if (run.style.isBold) FontWeight.Bold else if (paragraph.isHeader) FontWeight.Bold else FontWeight.Normal,
+                                                        fontStyle = if (run.style.isItalic) FontStyle.Italic else FontStyle.Normal,
+                                                        textDecoration = if (run.style.isUnderline) TextDecoration.Underline else TextDecoration.None,
+                                                        fontSize = if (paragraph.isHeader) 20.sp else run.style.fontSizeSp.sp,
+                                                        color = run.style.getComposeColor()
+                                                    )
+                                                    withStyle(spanStyle) {
+                                                        append(run.text)
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                text = annotatedText,
+                                                textAlign = paragraph.alignment.toComposeTextAlign(),
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+
+                                        is WordBodyElement.TableElement -> {
+                                            val table = element.table
+                                            Card(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 4.dp),
+                                                shape = RoundedCornerShape(4.dp),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                            ) {
+                                                Column(modifier = Modifier.fillMaxWidth()) {
+                                                    table.rows.forEachIndexed { rIdx, row ->
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .then(
+                                                                    if (rIdx == 0) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+                                                                    else Modifier
+                                                                )
+                                                        ) {
+                                                            row.cells.forEach { cell ->
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                                                ) {
+                                                                    Text(
+                                                                        text = cell.text,
+                                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                                            fontWeight = if (cell.isHeader) FontWeight.Bold else FontWeight.Normal
+                                                                        ),
+                                                                        color = MaterialTheme.colorScheme.onSurface
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
