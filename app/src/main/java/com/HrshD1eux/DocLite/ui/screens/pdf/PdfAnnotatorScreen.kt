@@ -391,8 +391,10 @@ fun PdfAnnotatorScreen(
                             val bitmapState = produceState<Bitmap?>(initialValue = null, pageIndex) {
                                 value = viewModel.getPage(pageIndex)
                             }
+                            val bmp = bitmapState.value
+                            val effectiveRatio = bmp?.let { it.width.toFloat() / it.height.toFloat() } ?: aspectRatioState.value
 
-                            // Google Drive style clean page sheet with subtle shadow
+                            // Clean page sheet matching exact PDF intrinsic aspect ratio
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -404,16 +406,15 @@ fun PdfAnnotatorScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .aspectRatio(aspectRatioState.value),
+                                        .aspectRatio(effectiveRatio),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    val bmp = bitmapState.value
                                     if (bmp != null) {
                                         Image(
                                             bitmap = bmp.asImageBitmap(),
                                             contentDescription = "PDF Page ${pageIndex + 1}",
-                                            contentScale = ContentScale.FillWidth,
-                                            modifier = Modifier.fillMaxWidth()
+                                            contentScale = ContentScale.FillBounds,
+                                            modifier = Modifier.fillMaxSize()
                                         )
 
                                         // Render Annotation Overlays on top of the rendered PDF page

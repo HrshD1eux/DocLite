@@ -19,8 +19,25 @@
 -dontwarn org.openxmlformats.schemas.**
 -keep class org.etsi.uri.** { *; }
 -dontwarn org.etsi.uri.**
--dontwarn org.apache.commons.**
+# Apache Commons & POI Companion Libraries
+-keep class org.apache.commons.compress.** { *; }
+-keep interface org.apache.commons.compress.** { *; }
+-dontwarn org.apache.commons.compress.**
+-keep class org.apache.commons.collections4.** { *; }
+-dontwarn org.apache.commons.collections4.**
+-keep class org.apache.commons.codec.** { *; }
+-dontwarn org.apache.commons.codec.**
+-keep class org.apache.commons.math3.** { *; }
+-dontwarn org.apache.commons.math3.**
+-keep class org.apache.commons.lang3.** { *; }
+-dontwarn org.apache.commons.lang3.**
+-keep class org.apache.commons.text.** { *; }
+-dontwarn org.apache.commons.text.**
+-keep class com.github.virtuald.** { *; }
 -dontwarn com.github.virtuald.**
+-keep class com.zaxxer.sparsebitset.** { *; }
+-dontwarn com.zaxxer.sparsebitset.**
+-dontwarn org.apache.commons.**
 -keep class org.w3c.dom.** { *; }
 -dontwarn org.w3c.dom.**
 -keep class com.fasterxml.aalto.** { *; }

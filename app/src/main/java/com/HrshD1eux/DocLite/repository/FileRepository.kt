@@ -38,6 +38,21 @@ class FileRepository(
 
     private val scanTriggerFlow = MutableStateFlow(System.currentTimeMillis())
 
+    private fun isIgnoredFileOrDirectory(name: String, path: String? = null): Boolean {
+        if (name.startsWith(".")) return true
+        if (name.equals(".trashes", ignoreCase = true) || name.equals(".trash", ignoreCase = true)) return true
+        if (name.contains("trashes", ignoreCase = true) || name.contains("trash", ignoreCase = true)) return true
+        if (name.equals("Android", ignoreCase = true) || name.equals("data", ignoreCase = true) ||
+            name.equals("lost+found", ignoreCase = true) || name.equals(".thumbnails", ignoreCase = true)) return true
+        if (path != null) {
+            val lowerPath = path.lowercase()
+            if (lowerPath.contains("/.trash") || lowerPath.contains("/.trashes") ||
+                lowerPath.contains("/trash/") || lowerPath.contains("/trashes/") ||
+                lowerPath.contains("/android/data") || lowerPath.contains("/android/obb")) return true
+        }
+        return false
+    }
+
     val protectedUrisFlow: Flow<List<String>> = passwordProtectionDao.getAllProtectedUris()
 
     val allDocumentsFlow: Flow<List<DocumentFile>> = combine(
@@ -47,9 +62,11 @@ class FileRepository(
         val protectedSet = protectedUris.toSet()
         withContext(Dispatchers.IO) {
             val allFiles = scanAllDocuments()
-            allFiles.map { file ->
-                file.copy(isPasswordProtected = protectedSet.contains(file.uriString))
-            }
+            allFiles
+                .filterNot { isIgnoredFileOrDirectory(it.name, it.path) }
+                .map { file ->
+                    file.copy(isPasswordProtected = protectedSet.contains(file.uriString))
+                }
         }
     }
 
@@ -58,20 +75,22 @@ class FileRepository(
         protectedUrisFlow
     ) { entities, protectedUris ->
         val protectedSet = protectedUris.toSet()
-        entities.map { entity ->
-            val format = DocumentFormat.entries.firstOrNull { it.name.equals(entity.formatName, ignoreCase = true) }
-                ?: DocumentFormat.fromExtension(entity.name.substringAfterLast('.', ""))
-            DocumentFile(
-                id = entity.uriString,
-                name = entity.name,
-                path = entity.path,
-                uriString = entity.uriString,
-                sizeBytes = entity.sizeBytes,
-                lastModified = entity.lastOpenedTimestamp,
-                format = format,
-                isPasswordProtected = protectedSet.contains(entity.uriString)
-            )
-        }
+        entities
+            .filterNot { isIgnoredFileOrDirectory(it.name, it.path) }
+            .map { entity ->
+                val format = DocumentFormat.entries.firstOrNull { it.name.equals(entity.formatName, ignoreCase = true) }
+                    ?: DocumentFormat.fromExtension(entity.name.substringAfterLast('.', ""))
+                DocumentFile(
+                    id = entity.uriString,
+                    name = entity.name,
+                    path = entity.path,
+                    uriString = entity.uriString,
+                    sizeBytes = entity.sizeBytes,
+                    lastModified = entity.lastOpenedTimestamp,
+                    format = format,
+                    isPasswordProtected = protectedSet.contains(entity.uriString)
+                )
+            }
     }
 
     val favoriteFilesFlow: Flow<List<DocumentFile>> = combine(
@@ -79,21 +98,23 @@ class FileRepository(
         protectedUrisFlow
     ) { entities, protectedUris ->
         val protectedSet = protectedUris.toSet()
-        entities.map { entity ->
-            val format = DocumentFormat.entries.firstOrNull { it.name.equals(entity.formatName, ignoreCase = true) }
-                ?: DocumentFormat.fromExtension(entity.name.substringAfterLast('.', ""))
-            DocumentFile(
-                id = entity.uriString,
-                name = entity.name,
-                path = entity.path,
-                uriString = entity.uriString,
-                sizeBytes = entity.sizeBytes,
-                lastModified = entity.addedTimestamp,
-                format = format,
-                isFavorite = true,
-                isPasswordProtected = protectedSet.contains(entity.uriString)
-            )
-        }
+        entities
+            .filterNot { isIgnoredFileOrDirectory(it.name, it.path) }
+            .map { entity ->
+                val format = DocumentFormat.entries.firstOrNull { it.name.equals(entity.formatName, ignoreCase = true) }
+                    ?: DocumentFormat.fromExtension(entity.name.substringAfterLast('.', ""))
+                DocumentFile(
+                    id = entity.uriString,
+                    name = entity.name,
+                    path = entity.path,
+                    uriString = entity.uriString,
+                    sizeBytes = entity.sizeBytes,
+                    lastModified = entity.addedTimestamp,
+                    format = format,
+                    isFavorite = true,
+                    isPasswordProtected = protectedSet.contains(entity.uriString)
+                )
+            }
     }
 
     fun refreshScan() {
@@ -308,7 +329,7 @@ class FileRepository(
 
         // 1. App local documents
         appDocsDir.listFiles()?.forEach { file ->
-            if (file.isFile) {
+            if (file.isFile && !file.isHidden && !isIgnoredFileOrDirectory(file.name, file.absolutePath)) {
                 val ext = file.extension.lowercase()
                 if (allowedExtensions.contains(ext)) {
                     val format = DocumentFormat.fromExtension(ext)
@@ -328,16 +349,17 @@ class FileRepository(
             }
         }
 
-        // 2. MediaStore Files Query (using DISPLAY_NAME and MIME_TYPE, compliant with Android 10-16)
+        // 2. MediaStore Files Query (using DISPLAY_NAME, MIME_TYPE, and DATA)
         val projection = arrayOf(
             android.provider.MediaStore.Files.FileColumns._ID,
             android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
             android.provider.MediaStore.MediaColumns.SIZE,
             android.provider.MediaStore.MediaColumns.DATE_MODIFIED,
-            android.provider.MediaStore.MediaColumns.MIME_TYPE
+            android.provider.MediaStore.MediaColumns.MIME_TYPE,
+            android.provider.MediaStore.MediaColumns.DATA
         )
 
-        val selection = "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.pdf' OR " +
+        var selection = "(${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.pdf' OR " +
                 "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.doc' OR " +
                 "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.docx' OR " +
                 "${android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.xls' OR " +
@@ -354,7 +376,11 @@ class FileRepository(
                 "'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', " +
                 "'application/vnd.ms-powerpoint', " +
                 "'application/vnd.openxmlformats-officedocument.presentationml.presentation', " +
-                "'text/plain', 'text/csv')"
+                "'text/plain', 'text/csv'))"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            selection += " AND (${android.provider.MediaStore.MediaColumns.IS_TRASHED} = 0)"
+        }
 
         val sortOrder = "${android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
         val queryUri = android.provider.MediaStore.Files.getContentUri("external")
@@ -371,9 +397,13 @@ class FileRepository(
                 val nameCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME)
                 val sizeCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.SIZE)
                 val dateModCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATE_MODIFIED)
+                val dataCol = try { cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DATA) } catch (t: Throwable) { -1 }
 
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(nameCol) ?: continue
+                    val dataPath = if (dataCol != -1) try { cursor.getString(dataCol) } catch (t: Throwable) { null } else null
+                    if (isIgnoredFileOrDirectory(name, dataPath)) continue
+
                     val ext = name.substringAfterLast('.', "").lowercase()
                     if (!allowedExtensions.contains(ext)) continue
 
@@ -387,7 +417,7 @@ class FileRepository(
                     foundFiles[uriStr] = DocumentFile(
                         id = uriStr,
                         name = name,
-                        path = uriStr,
+                        path = dataPath ?: uriStr,
                         uriString = uriStr,
                         sizeBytes = size,
                         lastModified = dateMod,
@@ -415,11 +445,12 @@ class FileRepository(
             fun scanDirectoryRecursively(dir: File, currentDepth: Int, maxDepth: Int = 3) {
                 if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory || !dir.canRead()) return
                 dir.listFiles()?.forEach { file ->
+                    val fileName = file.name
+                    val filePath = file.absolutePath
+                    if (file.isHidden || isIgnoredFileOrDirectory(fileName, filePath)) return@forEach
+
                     if (file.isDirectory) {
-                        val dirName = file.name
-                        if (!dirName.startsWith(".") && dirName != "Android" && dirName != "data") {
-                            scanDirectoryRecursively(file, currentDepth + 1, maxDepth)
-                        }
+                        scanDirectoryRecursively(file, currentDepth + 1, maxDepth)
                     } else if (file.isFile && file.canRead()) {
                         val ext = file.extension.lowercase()
                         if (allowedExtensions.contains(ext)) {
@@ -461,7 +492,7 @@ class FileRepository(
         // 4. App external documents directory
         val extDocsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
         extDocsDir?.listFiles()?.forEach { file ->
-            if (file.isFile) {
+            if (file.isFile && !file.isHidden && !isIgnoredFileOrDirectory(file.name, file.absolutePath)) {
                 val ext = file.extension.lowercase()
                 if (allowedExtensions.contains(ext)) {
                     val format = DocumentFormat.fromExtension(ext)
@@ -499,7 +530,7 @@ class FileRepository(
                                 val name = if (nameIndex != -1) cursor.getString(nameIndex) ?: "Document" else "Document"
                                 val size = if (sizeIndex != -1) cursor.getLong(sizeIndex) else 0L
                                 val ext = name.substringAfterLast('.', "").lowercase()
-                                if (allowedExtensions.contains(ext)) {
+                                if (allowedExtensions.contains(ext) && !isIgnoredFileOrDirectory(name, uri.path)) {
                                     val format = DocumentFormat.fromExtension(ext)
                                     foundFiles[uriStr] = DocumentFile(
                                         id = uriStr,
@@ -537,8 +568,21 @@ class FileRepository(
             emptySet()
         }
 
+        val allowedExtensions = setOf(
+            "doc", "docx", "txt", "rtf",
+            "xls", "xlsx", "csv",
+            "ppt", "pptx",
+            "pdf"
+        )
+
         targetDir.listFiles()?.forEach { file ->
+            val fileName = file.name
+            val filePath = file.absolutePath
+            if (file.isHidden || isIgnoredFileOrDirectory(fileName, filePath)) return@forEach
+
             val ext = file.extension.lowercase()
+            if (!file.isDirectory && !allowedExtensions.contains(ext)) return@forEach
+
             val format = DocumentFormat.fromExtension(ext)
             val uriStr = Uri.fromFile(file).toString()
             filesList.add(
@@ -625,10 +669,33 @@ class FileRepository(
             favoriteFileDao.removeFavorite(file.uriString)
             passwordProtectionDao.removePassword(file.uriString)
             val localFile = File(file.path)
-            if (localFile.exists()) localFile.delete() else true
+            val fileDeleted = if (localFile.exists()) {
+                localFile.delete()
+            } else {
+                try {
+                    val uri = Uri.parse(file.uriString)
+                    if (uri.scheme == "content") {
+                        context.contentResolver.delete(uri, null, null) > 0
+                    } else true
+                } catch (t: Throwable) {
+                    false
+                }
+            }
+            refreshScan()
+            fileDeleted
         } catch (e: Exception) {
             false
         }
+    }
+
+    suspend fun deleteFiles(files: List<DocumentFile>): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        for (file in files) {
+            if (deleteFile(file)) {
+                count++
+            }
+        }
+        count
     }
 
     suspend fun seedInitialSampleDocumentsIfNeeded() = withContext(Dispatchers.IO) {

@@ -37,11 +37,16 @@ class WordEngine(private val context: Context) {
 
         val tempFile = File.createTempFile("docx_cache_", ".tmp", context.cacheDir)
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            val stream = openInputStreamRobust(uri) ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
+            stream.use { input ->
                 tempFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
-            } ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
+            }
+
+            if (!tempFile.exists() || tempFile.length() == 0L) {
+                throw IllegalArgumentException("The Word document is empty or could not be read from storage.")
+            }
 
             val pkg = try {
                 OPCPackage.open(tempFile, PackageAccess.READ)
@@ -50,7 +55,8 @@ class WordEngine(private val context: Context) {
             } catch (e: org.apache.poi.openxml4j.exceptions.OLE2NotOfficeXmlFileException) {
                 throw UnsupportedOperationException("Legacy Word binary format (.doc) is not supported. Please convert to .docx.", e)
             } catch (t: Throwable) {
-                throw IllegalArgumentException("Could not read Word package: ${t.message ?: "Invalid file"}", t)
+                val detail = t.localizedMessage ?: t.message ?: t::class.java.simpleName
+                throw IllegalArgumentException("Could not read Word package: $detail", t)
             }
 
             pkg.use { opcPackage ->
@@ -282,4 +288,29 @@ class WordEngine(private val context: Context) {
         }
         return result ?: "document.docx"
     }
+
+    private fun openInputStreamRobust(uri: Uri): InputStream? {
+        return try {
+            if (uri.scheme == "file") {
+                val file = File(uri.path ?: "")
+                if (file.exists() && file.canRead()) java.io.FileInputStream(file)
+                else context.contentResolver.openInputStream(uri)
+            } else {
+                context.contentResolver.openInputStream(uri) ?: uri.path?.let { path ->
+                    val file = File(path)
+                    if (file.exists() && file.canRead()) java.io.FileInputStream(file) else null
+                }
+            }
+        } catch (t: Throwable) {
+            try {
+                uri.path?.let { path ->
+                    val file = File(path)
+                    if (file.exists() && file.canRead()) java.io.FileInputStream(file) else null
+                }
+            } catch (ignored: Throwable) {
+                null
+            }
+        }
+    }
 }
+

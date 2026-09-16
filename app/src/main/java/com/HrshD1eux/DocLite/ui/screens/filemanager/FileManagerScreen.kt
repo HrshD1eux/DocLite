@@ -12,10 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +38,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,17 +74,66 @@ fun FileManagerScreen(
     var showRenameDialog by remember { mutableStateOf<DocumentFile?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
 
     var selectedFileForUnlock by remember { mutableStateOf<DocumentFile?>(null) }
     var unlockErrorMessage by remember { mutableStateOf<String?>(null) }
     var selectedFileForPasswordSet by remember { mutableStateOf<DocumentFile?>(null) }
 
+    val successState = state as? FileManagerUiState.Success
+    val isSelectionMode = successState != null && successState.selectedFileIds.isNotEmpty()
+    val selectedCount = successState?.selectedFileIds?.size ?: 0
+
+    BackHandler(enabled = isSelectionMode) {
+        viewModel.clearSelection()
+    }
+
     fun handleFileClick(file: DocumentFile) {
+        val currentSuccess = state as? FileManagerUiState.Success
+        if (currentSuccess != null && currentSuccess.selectedFileIds.isNotEmpty()) {
+            viewModel.toggleSelectFile(file)
+            return
+        }
         if (file.isPasswordProtected) {
             unlockErrorMessage = null
             selectedFileForUnlock = file
         } else {
             onOpenFile(file)
+        }
+    }
+
+    fun shareMultipleFiles(files: List<DocumentFile>) {
+        if (files.isEmpty()) return
+        val uris = ArrayList<android.net.Uri>()
+        for (file in files) {
+            val uri = android.net.Uri.parse(file.uriString)
+            val shareUri = if (uri.scheme == "file" || uri.scheme == null) {
+                val path = uri.path ?: file.path
+                try {
+                    androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(path))
+                } catch (t: Throwable) {
+                    uri
+                }
+            } else {
+                uri
+            }
+            uris.add(shareUri)
+        }
+
+        if (uris.size == 1) {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_STREAM, uris[0])
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share Document"))
+        } else if (uris.size > 1) {
+            val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share Documents"))
         }
     }
 
@@ -173,60 +229,144 @@ fun FileManagerScreen(
         )
     }
 
+    if (showBatchDeleteDialog) {
+        val count = selectedCount
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteDialog = false },
+            title = { Text("Delete $count Files") },
+            text = { Text("Are you sure you want to permanently delete $count selected file(s)? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBatchDeleteDialog = false
+                        viewModel.deleteSelectedFiles()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "File Manager",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF191C1D)
+            if (isSelectionMode) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "$selectedCount selected",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         )
-                    )
-                },
-                actions = {
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort Files", tint = Color(0xFF40484B))
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear Selection",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    },
+                    actions = {
+                        val currentFiles = (state as? FileManagerUiState.Success)?.files ?: emptyList()
+                        val isAllSelected = selectedCount == currentFiles.size && currentFiles.isNotEmpty()
+                        IconButton(onClick = {
+                            if (isAllSelected) viewModel.clearSelection() else viewModel.selectAll()
+                        }) {
+                            Icon(
+                                imageVector = if (isAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                                contentDescription = if (isAllSelected) "Deselect All" else "Select All",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
 
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Sort by Date") },
-                                onClick = {
-                                    viewModel.setSortOption(SortOption.DATE)
-                                    showSortMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sort by Name") },
-                                onClick = {
-                                    viewModel.setSortOption(SortOption.NAME)
-                                    showSortMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sort by Size") },
-                                onClick = {
-                                    viewModel.setSortOption(SortOption.SIZE)
-                                    showSortMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sort by Type") },
-                                onClick = {
-                                    viewModel.setSortOption(SortOption.TYPE)
-                                    showSortMenu = false
-                                }
+                        IconButton(onClick = {
+                            val selectedFiles = viewModel.getSelectedFiles()
+                            if (selectedFiles.isNotEmpty()) {
+                                shareMultipleFiles(selectedFiles)
+                            }
+                        }) {
+                            Icon(
+                                Icons.Default.Share,
+                                contentDescription = "Share Selected Files",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
+
+                        IconButton(onClick = { showBatchDeleteDialog = true }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete Selected Files",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "File Manager",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF191C1D)
+                            )
+                        )
+                    },
+                    actions = {
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort Files", tint = Color(0xFF40484B))
+                            }
+
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Sort by Date") },
+                                    onClick = {
+                                        viewModel.setSortOption(SortOption.DATE)
+                                        showSortMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Sort by Name") },
+                                    onClick = {
+                                        viewModel.setSortOption(SortOption.NAME)
+                                        showSortMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Sort by Size") },
+                                    onClick = {
+                                        viewModel.setSortOption(SortOption.SIZE)
+                                        showSortMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Sort by Type") },
+                                    onClick = {
+                                        viewModel.setSortOption(SortOption.TYPE)
+                                        showSortMenu = false
+                                    }
+                                )
+                            }
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color(0xFFFBFDFD),
@@ -305,7 +445,11 @@ fun FileManagerScreen(
                                 onDeleteClick = { viewModel.deleteFile(file) },
                                 onShareClick = { shareFile(file) },
                                 onProtectClick = { selectedFileForPasswordSet = file },
-                                onAnalyzeStatement = { onAnalyzeStatement(file) }
+                                onAnalyzeStatement = { onAnalyzeStatement(file) },
+                                isSelectionMode = isSelectionMode,
+                                isSelected = uiState.selectedFileIds.contains(file.id),
+                                onSelectToggle = { viewModel.toggleSelectFile(file) },
+                                onLongClick = { viewModel.toggleSelectFile(file) }
                             )
                         }
                     }

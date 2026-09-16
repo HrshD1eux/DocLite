@@ -69,9 +69,9 @@ class PdfEngine(private val context: Context) {
 
             try {
                 val page = renderer.openPage(pageIndex)
-                val aspectRatio = page.height.toFloat() / page.width.toFloat().coerceAtLeast(1f)
-                aspectRatioMap[pageIndex] = aspectRatio
-                val targetHeightPx = (targetWidthPx * aspectRatio).toInt().coerceAtLeast(100)
+                val widthToHeight = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
+                aspectRatioMap[pageIndex] = widthToHeight
+                val targetHeightPx = (targetWidthPx / widthToHeight).toInt().coerceAtLeast(100)
 
                 val bitmap = Bitmap.createBitmap(targetWidthPx, targetHeightPx, Bitmap.Config.ARGB_8888)
                 bitmap.eraseColor(android.graphics.Color.WHITE)

@@ -20,6 +20,7 @@ sealed interface FileManagerUiState {
         val searchQuery: String = "",
         val currentSort: SortOption = SortOption.DATE,
         val isAscending: Boolean = false,
+        val selectedFileIds: Set<String> = emptySet(),
         val actionMessage: String? = null
     ) : FileManagerUiState
 }
@@ -50,13 +51,17 @@ class FileManagerViewModel(
         val query = currentState?.searchQuery ?: ""
         val sort = currentState?.currentSort ?: SortOption.DATE
         val asc = currentState?.isAscending ?: false
+        val currentSelected = currentState?.selectedFileIds ?: emptySet()
 
         val filtered = filterAndSortFiles(cachedFiles, query, sort, asc)
+        val validSelected = currentSelected.filter { id -> filtered.any { it.id == id } }.toSet()
+
         _uiState.value = FileManagerUiState.Success(
             files = filtered,
             searchQuery = query,
             currentSort = sort,
             isAscending = asc,
+            selectedFileIds = validSelected,
             actionMessage = currentState?.actionMessage
         )
     }
@@ -137,6 +142,51 @@ class FileManagerViewModel(
         viewModelScope.launch {
             val isValid = fileRepository.verifyFilePassword(file.uriString, password)
             onResult(isValid)
+        }
+    }
+
+    fun toggleSelectFile(file: DocumentFile) {
+        val currentState = _uiState.value as? FileManagerUiState.Success ?: return
+        val currentSelected = currentState.selectedFileIds.toMutableSet()
+        if (currentSelected.contains(file.id)) {
+            currentSelected.remove(file.id)
+        } else {
+            currentSelected.add(file.id)
+        }
+        _uiState.value = currentState.copy(selectedFileIds = currentSelected)
+    }
+
+    fun selectAll() {
+        val currentState = _uiState.value as? FileManagerUiState.Success ?: return
+        val allIds = currentState.files.map { it.id }.toSet()
+        _uiState.value = currentState.copy(selectedFileIds = allIds)
+    }
+
+    fun clearSelection() {
+        val currentState = _uiState.value as? FileManagerUiState.Success ?: return
+        _uiState.value = currentState.copy(selectedFileIds = emptySet())
+    }
+
+    fun getSelectedFiles(): List<DocumentFile> {
+        val currentState = _uiState.value as? FileManagerUiState.Success ?: return emptyList()
+        return currentState.files.filter { currentState.selectedFileIds.contains(it.id) }
+    }
+
+    fun deleteSelectedFiles() {
+        val currentState = _uiState.value as? FileManagerUiState.Success ?: return
+        val selected = getSelectedFiles()
+        if (selected.isEmpty()) return
+
+        viewModelScope.launch {
+            val count = fileRepository.deleteFiles(selected)
+            reloadFilesInternal()
+            val updatedState = _uiState.value as? FileManagerUiState.Success
+            if (updatedState != null) {
+                _uiState.value = updatedState.copy(
+                    selectedFileIds = emptySet(),
+                    actionMessage = if (count > 0) "$count file(s) deleted" else "Failed to delete files"
+                )
+            }
         }
     }
 
