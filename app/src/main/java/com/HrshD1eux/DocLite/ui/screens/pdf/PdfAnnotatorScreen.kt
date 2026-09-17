@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,28 +17,31 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,12 +50,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -76,6 +82,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -87,10 +94,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -100,8 +112,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.HrshD1eux.DocLite.models.AnnotationType
+import com.HrshD1eux.DocLite.models.DocumentFile
+import com.HrshD1eux.DocLite.models.DocumentFormat
+import com.HrshD1eux.DocLite.models.DrawingPoint
+import com.HrshD1eux.DocLite.models.PdfAnnotation
+import com.HrshD1eux.DocLite.ui.components.PasswordPromptDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +139,7 @@ fun PdfAnnotatorScreen(
     var showStickyNoteDialog by remember { mutableStateOf(false) }
     var showJumpToPageDialog by remember { mutableStateOf(false) }
     var noteText by remember { mutableStateOf("") }
+    var selectedNoteForInspection by remember { mutableStateOf<PdfAnnotation?>(null) }
 
     // Lazy list and current page detection
     val listState = rememberLazyListState()
@@ -163,11 +182,61 @@ fun PdfAnnotatorScreen(
         viewModel.goToPage(visiblePageIndex)
     }
 
-    // Viewer Canvas Theme: Google Drive style dark/neutral viewer canvas
+    // Viewer Canvas Theme
     val isDark = isSystemInDarkTheme()
     val canvasBgColor = if (isDark) Color(0xFF1E1F22) else Color(0xFFE9ECF0)
 
-    // Sticky Note Dialog
+    // Password Required Prompt Dialog
+    val passwordState = state as? PdfUiState.PasswordRequired
+    if (passwordState != null) {
+        val dummyFile = remember(passwordState.uri) {
+            DocumentFile(
+                id = passwordState.uri.toString(),
+                name = passwordState.uri.lastPathSegment ?: "Protected Document",
+                path = passwordState.uri.path ?: "",
+                uriString = passwordState.uri.toString(),
+                sizeBytes = 0,
+                lastModified = System.currentTimeMillis(),
+                format = DocumentFormat.PDF,
+                isPasswordProtected = true
+            )
+        }
+        PasswordPromptDialog(
+            file = dummyFile,
+            onDismiss = onBack,
+            onUnlock = { password ->
+                viewModel.openPdf(passwordState.uri, password)
+            },
+            errorMessage = passwordState.errorMessage
+        )
+    }
+
+    // Inspect / Delete Sticky Note Dialog
+    if (selectedNoteForInspection != null) {
+        val note = selectedNoteForInspection!!
+        AlertDialog(
+            onDismissRequest = { selectedNoteForInspection = null },
+            title = { Text("Sticky Note") },
+            text = { Text(note.noteText) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteAnnotation(note.id)
+                        selectedNoteForInspection = null
+                    }
+                ) {
+                    Text("Delete Note", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedNoteForInspection = null }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Add Sticky Note Dialog
     if (showStickyNoteDialog) {
         AlertDialog(
             onDismissRequest = { showStickyNoteDialog = false },
@@ -280,16 +349,32 @@ fun PdfAnnotatorScreen(
                 }
             }
 
-            is PdfUiState.Error -> {
+            is PdfUiState.PasswordRequired -> {
+                // Password prompt is active in dialog above
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = uiState.message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            is PdfUiState.Error -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = uiState.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(onClick = onBack) {
+                            Text("Go Back")
+                        }
+                    }
                 }
             }
 
@@ -297,12 +382,12 @@ fun PdfAnnotatorScreen(
                 val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-                // Main PDF Page Viewport Canvas with Pinch-to-Zoom & Pan
+                // Main PDF Page Viewport Canvas with non-locking Pinch-to-Zoom & Horizontal Pan
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         // Double-tap zoom and single-tap controls toggle
-                        .pointerInput(uiState.isAnnotationMode) {
+                        .pointerInput(uiState.isAnnotationMode, uiState.isSearchActive) {
                             detectTapGestures(
                                 onTap = {
                                     if (!uiState.isAnnotationMode && !uiState.isSearchActive) {
@@ -314,17 +399,15 @@ fun PdfAnnotatorScreen(
                                         scale = 1f
                                         panOffset = Offset.Zero
                                     } else {
-                                        scale = 2.5f
+                                        scale = 2.2f
                                         val centerX = size.width / 2f
-                                        val centerY = size.height / 2f
-                                        val targetX = (centerX - tapOffset.x) * 1.5f
-                                        val targetY = (centerY - tapOffset.y) * 1.5f
-                                        panOffset = Offset(targetX, targetY)
+                                        val targetX = (centerX - tapOffset.x) * 1.2f
+                                        panOffset = Offset(targetX, 0f)
                                     }
                                 }
                             )
                         }
-                        // Multi-touch pinch zoom & pan
+                        // Multi-touch pinch zoom & horizontal pan without blocking vertical scroll
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
@@ -332,27 +415,39 @@ fun PdfAnnotatorScreen(
                                     val event = awaitPointerEvent()
                                     val touchCount = event.changes.size
 
-                                    // Intercept if multi-finger pinch or already zoomed
-                                    if (touchCount > 1 || scale > 1.05f) {
+                                    // Two-finger gesture: pinch zoom and two-finger pan
+                                    if (touchCount > 1) {
                                         val zoomChange = event.calculateZoom()
                                         val panChange = event.calculatePan()
 
-                                        if (zoomChange != 1f || (scale > 1.05f && panChange != Offset.Zero)) {
-                                            val newScale = (scale * zoomChange).coerceIn(1f, 4f)
+                                        if (zoomChange != 1f || panChange != Offset.Zero) {
+                                            val newScale = (scale * zoomChange).coerceIn(1f, 3.5f)
                                             if (newScale <= 1.05f) {
                                                 scale = 1f
                                                 panOffset = Offset.Zero
                                             } else {
                                                 val maxX = (newScale - 1f) * size.width / 2f
-                                                val maxY = (newScale - 1f) * size.height / 2f
                                                 panOffset = Offset(
                                                     (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
-                                                    (panOffset.y + panChange.y).coerceIn(-maxY, maxY)
+                                                    0f
                                                 )
                                                 scale = newScale
                                             }
 
-                                            // Consume to prevent conflicting scroll
+                                            event.changes.forEach {
+                                                if (it.positionChanged()) it.consume()
+                                            }
+                                        }
+                                    } else if (scale > 1.05f && touchCount == 1) {
+                                        // Single finger when zoomed in: allow horizontal pan for wide pages
+                                        // only consume if dragging horizontally so vertical scrolling works!
+                                        val panChange = event.calculatePan()
+                                        if (abs(panChange.x) > abs(panChange.y) * 1.3f && panChange.x != 0f) {
+                                            val maxX = (scale - 1f) * size.width / 2f
+                                            panOffset = Offset(
+                                                (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
+                                                0f
+                                            )
                                             event.changes.forEach {
                                                 if (it.positionChanged()) it.consume()
                                             }
@@ -360,7 +455,6 @@ fun PdfAnnotatorScreen(
                                     }
                                 } while (event.changes.any { it.pressed })
 
-                                // Snap firmly to locked 1.0x on gesture release
                                 if (scale <= 1.05f) {
                                     scale = 1f
                                     panOffset = Offset.Zero
@@ -371,7 +465,7 @@ fun PdfAnnotatorScreen(
                             scaleX = scale
                             scaleY = scale
                             translationX = panOffset.x
-                            translationY = panOffset.y
+                            translationY = 0f
                         }
                 ) {
                     LazyColumn(
@@ -394,7 +488,9 @@ fun PdfAnnotatorScreen(
                             val bmp = bitmapState.value
                             val effectiveRatio = bmp?.let { it.width.toFloat() / it.height.toFloat() } ?: aspectRatioState.value
 
-                            // Clean page sheet matching exact PDF intrinsic aspect ratio
+                            // Active freehand live stroke points for this page
+                            val activeLiveStroke = remember { mutableStateListOf<DrawingPoint>() }
+
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -403,45 +499,166 @@ fun PdfAnnotatorScreen(
                                 shape = RoundedCornerShape(2.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White)
                             ) {
-                                Box(
+                                BoxWithConstraints(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .aspectRatio(effectiveRatio),
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    val containerWidth = maxWidth
+                                    val containerHeight = maxHeight
+
                                     if (bmp != null) {
+                                        // Remember ImageBitmap to prevent continuous object allocations
+                                        val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
                                         Image(
-                                            bitmap = bmp.asImageBitmap(),
+                                            bitmap = imageBitmap,
                                             contentDescription = "PDF Page ${pageIndex + 1}",
                                             contentScale = ContentScale.FillBounds,
                                             modifier = Modifier.fillMaxSize()
                                         )
 
-                                        // Render Annotation Overlays on top of the rendered PDF page
-                                        uiState.annotations.filter { it.pageIndex == pageIndex }.forEach { ann ->
-                                            if (ann.type == AnnotationType.HIGHLIGHT) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(ann.getComposeColor().copy(alpha = 0.35f))
-                                                )
-                                            } else if (ann.type == AnnotationType.STICKY_NOTE) {
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .align(Alignment.TopEnd)
-                                                        .padding(12.dp),
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                                                    shadowElevation = 4.dp
+                                        // Render Persisted Annotations for this page
+                                        val pageAnnotations = uiState.annotations.filter { it.pageIndex == pageIndex }
+
+                                        // 1. Highlighting
+                                        pageAnnotations.filter { it.type == AnnotationType.HIGHLIGHT }.forEach { ann ->
+                                            val leftOffset = containerWidth * ann.boundsLeftRatio
+                                            val topOffset = containerHeight * ann.boundsTopRatio
+                                            val highlightWidth = containerWidth * ann.boundsWidthRatio
+                                            val highlightHeight = containerHeight * ann.boundsHeightRatio
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset(x = leftOffset, y = topOffset)
+                                                    .size(width = highlightWidth, height = highlightHeight)
+                                                    .background(
+                                                        ann.getComposeColor().copy(alpha = 0.4f),
+                                                        RoundedCornerShape(2.dp)
+                                                    )
+                                            )
+                                        }
+
+                                        // 2. Free Draw Paths
+                                        val freeDrawAnnotations = pageAnnotations.filter { it.type == AnnotationType.FREE_DRAW && it.points.size >= 2 }
+                                        if (freeDrawAnnotations.isNotEmpty() || activeLiveStroke.size >= 2) {
+                                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                                // Draw saved strokes
+                                                for (ann in freeDrawAnnotations) {
+                                                    val path = Path()
+                                                    val first = ann.points.first()
+                                                    path.moveTo(first.xRatio * size.width, first.yRatio * size.height)
+                                                    for (pt in ann.points.drop(1)) {
+                                                        path.lineTo(pt.xRatio * size.width, pt.yRatio * size.height)
+                                                    }
+                                                    drawPath(
+                                                        path = path,
+                                                        color = ann.getComposeColor(),
+                                                        style = Stroke(
+                                                            width = ann.strokeWidthDp.dp.toPx(),
+                                                            cap = StrokeCap.Round,
+                                                            join = StrokeJoin.Round
+                                                        )
+                                                    )
+                                                }
+
+                                                // Draw live in-progress stroke
+                                                if (activeLiveStroke.size >= 2) {
+                                                    val livePath = Path()
+                                                    val first = activeLiveStroke.first()
+                                                    livePath.moveTo(first.xRatio * size.width, first.yRatio * size.height)
+                                                    for (pt in activeLiveStroke.drop(1)) {
+                                                        livePath.lineTo(pt.xRatio * size.width, pt.yRatio * size.height)
+                                                    }
+                                                    drawPath(
+                                                        path = livePath,
+                                                        color = Color(0xFFF44336),
+                                                        style = Stroke(
+                                                            width = 3.dp.toPx(),
+                                                            cap = StrokeCap.Round,
+                                                            join = StrokeJoin.Round
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // 3. Sticky Notes
+                                        pageAnnotations.filter { it.type == AnnotationType.STICKY_NOTE }.forEach { ann ->
+                                            val leftOffset = containerWidth * ann.boundsLeftRatio
+                                            val topOffset = containerHeight * ann.boundsTopRatio
+
+                                            Surface(
+                                                modifier = Modifier
+                                                    .offset(x = leftOffset, y = topOffset)
+                                                    .clickable { selectedNoteForInspection = ann },
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                                shadowElevation = 4.dp
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                                 ) {
+                                                    Icon(
+                                                        Icons.AutoMirrored.Filled.Note,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.size(4.dp))
                                                     Text(
                                                         text = ann.noteText,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
                                                         style = MaterialTheme.typography.bodySmall,
-                                                        modifier = Modifier.padding(6.dp),
                                                         color = MaterialTheme.colorScheme.onTertiaryContainer
                                                     )
                                                 }
                                             }
+                                        }
+
+                                        // 4. Interactive Live Drawing Overlay when Free Draw mode is active
+                                        if (uiState.isAnnotationMode && uiState.selectedAnnotationTool == AnnotationType.FREE_DRAW) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .pointerInput(pageIndex) {
+                                                        detectDragGestures(
+                                                            onDragStart = { offset ->
+                                                                activeLiveStroke.clear()
+                                                                activeLiveStroke.add(
+                                                                    DrawingPoint(
+                                                                        xRatio = (offset.x / size.width).coerceIn(0f, 1f),
+                                                                        yRatio = (offset.y / size.height).coerceIn(0f, 1f)
+                                                                    )
+                                                                )
+                                                            },
+                                                            onDrag = { change, _ ->
+                                                                change.consume()
+                                                                val pos = change.position
+                                                                activeLiveStroke.add(
+                                                                    DrawingPoint(
+                                                                        xRatio = (pos.x / size.width).coerceIn(0f, 1f),
+                                                                        yRatio = (pos.y / size.height).coerceIn(0f, 1f)
+                                                                    )
+                                                                )
+                                                            },
+                                                            onDragEnd = {
+                                                                if (activeLiveStroke.size >= 2) {
+                                                                    viewModel.addFreeDrawAnnotation(
+                                                                        pageIndex = pageIndex,
+                                                                        points = activeLiveStroke.toList()
+                                                                    )
+                                                                }
+                                                                activeLiveStroke.clear()
+                                                            },
+                                                            onDragCancel = {
+                                                                activeLiveStroke.clear()
+                                                            }
+                                                        )
+                                                    }
+                                            )
                                         }
                                     } else {
                                         CircularProgressIndicator(
@@ -452,6 +669,41 @@ fun PdfAnnotatorScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Reset Zoom Floating Button (Visible when zoomed in)
+                if (scale > 1.05f) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = navBarBottom + if (uiState.isAnnotationMode) 80.dp else 24.dp, end = 16.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                scale = 1f
+                                panOffset = Offset.Zero
+                            },
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = CircleShape,
+                        shadowElevation = 6.dp
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ZoomOut,
+                                contentDescription = "Reset Zoom",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(
+                                text = "1.0x",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
                 }
@@ -598,8 +850,12 @@ fun PdfAnnotatorScreen(
                                     Icon(Icons.Default.Search, contentDescription = "Search document")
                                 }
 
-                                // Share
-                                IconButton(onClick = { sharePdf(context, fileUri) }) {
+                                // Share (Flattens annotations into exported PDF if present)
+                                IconButton(onClick = {
+                                    viewModel.prepareSharePdf { exportUri ->
+                                        sharePdf(context, exportUri)
+                                    }
+                                }) {
                                     Icon(Icons.Default.Share, contentDescription = "Share PDF")
                                 }
 
@@ -624,7 +880,7 @@ fun PdfAnnotatorScreen(
                     }
                 }
 
-                // Bottom Chrome: Sleek Annotation Panel (Visible only when in Annotation Mode)
+                // Bottom Chrome: Sleek Annotation Panel
                 AnimatedVisibility(
                     visible = uiState.isAnnotationMode && controlsVisible,
                     enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -647,7 +903,10 @@ fun PdfAnnotatorScreen(
                         ) {
                             // Highlight
                             IconButton(
-                                onClick = { viewModel.addHighlightAnnotation(visiblePageIndex) },
+                                onClick = {
+                                    viewModel.selectTool(AnnotationType.HIGHLIGHT)
+                                    viewModel.addHighlightAnnotation(visiblePageIndex)
+                                },
                                 colors = IconButtonDefaults.iconButtonColors(
                                     containerColor = if (uiState.selectedAnnotationTool == AnnotationType.HIGHLIGHT) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                                 )
@@ -661,7 +920,10 @@ fun PdfAnnotatorScreen(
 
                             // Sticky Note
                             IconButton(
-                                onClick = { showStickyNoteDialog = true },
+                                onClick = {
+                                    viewModel.selectTool(AnnotationType.STICKY_NOTE)
+                                    showStickyNoteDialog = true
+                                },
                                 colors = IconButtonDefaults.iconButtonColors(
                                     containerColor = if (uiState.selectedAnnotationTool == AnnotationType.STICKY_NOTE) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                                 )
@@ -673,7 +935,7 @@ fun PdfAnnotatorScreen(
                                 )
                             }
 
-                            // Free Draw
+                            // Free Draw (activates interactive canvas)
                             IconButton(
                                 onClick = { viewModel.selectTool(AnnotationType.FREE_DRAW) },
                                 colors = IconButtonDefaults.iconButtonColors(
@@ -724,4 +986,3 @@ private fun sharePdf(context: Context, fileUri: Uri) {
         e.printStackTrace()
     }
 }
-

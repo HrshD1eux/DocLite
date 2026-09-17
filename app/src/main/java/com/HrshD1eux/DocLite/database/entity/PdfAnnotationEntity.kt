@@ -1,9 +1,13 @@
 package com.HrshD1eux.DocLite.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "pdf_annotations")
+@Entity(
+    tableName = "pdf_annotations",
+    indices = [Index(value = ["fileUri"])]
+)
 data class PdfAnnotationEntity(
     @PrimaryKey val id: String,
     val fileUri: String,

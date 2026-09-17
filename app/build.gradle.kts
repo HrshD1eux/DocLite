@@ -41,10 +41,13 @@ android {
       val envKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
       val envKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
 
-      storeFile = if (envStoreFile != null) file(envStoreFile) else file(localProps.getProperty("RELEASE_STORE_FILE") ?: "${rootDir}/doclite-secure.jks")
-      storePassword = envStorePassword ?: localProps.getProperty("RELEASE_STORE_PASSWORD") ?: ""
-      keyAlias = envKeyAlias ?: localProps.getProperty("RELEASE_KEY_ALIAS") ?: ""
-      keyPassword = envKeyPassword ?: localProps.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+      val releaseStoreFilePath = envStoreFile ?: localProps.getProperty("RELEASE_STORE_FILE")
+      if (!releaseStoreFilePath.isNullOrBlank() && file(releaseStoreFilePath).exists()) {
+          storeFile = file(releaseStoreFilePath)
+          storePassword = envStorePassword ?: localProps.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+          keyAlias = envKeyAlias ?: localProps.getProperty("RELEASE_KEY_ALIAS") ?: ""
+          keyPassword = envKeyPassword ?: localProps.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+      }
     }
   }
   buildTypes {

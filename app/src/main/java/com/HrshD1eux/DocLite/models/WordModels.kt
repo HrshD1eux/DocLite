@@ -71,11 +71,21 @@ data class Paragraph(
 data class WordDocument(
     val title: String,
     val fileUri: String,
-    val paragraphs: List<Paragraph> = listOf(Paragraph()),
-    val tables: List<WordTable> = emptyList(),
-    val bodyElements: List<WordBodyElement> = emptyList(),
+    val bodyElements: List<WordBodyElement> = listOf(
+        WordBodyElement.ParagraphElement(Paragraph())
+    ),
     val wordCount: Int = 0,
     val characterCount: Int = 0,
     val hasUnrecognizedElements: Boolean = false
-)
+) {
+    /** Computed view — always in sync with bodyElements. */
+    val paragraphs: List<Paragraph>
+        get() = bodyElements.filterIsInstance<WordBodyElement.ParagraphElement>()
+            .map { it.paragraph }
+
+    /** Computed view — all tables from bodyElements. */
+    val tables: List<WordTable>
+        get() = bodyElements.filterIsInstance<WordBodyElement.TableElement>()
+            .map { it.table }
+}
 

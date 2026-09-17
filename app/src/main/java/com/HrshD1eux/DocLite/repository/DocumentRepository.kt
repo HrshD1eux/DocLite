@@ -44,9 +44,9 @@ class DocumentRepository(
         }
     }
 
-    suspend fun loadSpreadsheet(uri: Uri): Result<SpreadsheetDocument> = withContext(Dispatchers.IO) {
+    suspend fun loadSpreadsheet(uri: Uri, password: String? = null): Result<SpreadsheetDocument> = withContext(Dispatchers.IO) {
         try {
-            val sheetDoc = excelEngine.loadSpreadsheet(uri)
+            val sheetDoc = excelEngine.loadSpreadsheet(uri, password)
             Result.success(sheetDoc)
         } catch (t: Throwable) {
             Result.failure(t)
@@ -92,6 +92,7 @@ class DocumentRepository(
                     type = type,
                     colorHex = entity.colorHex,
                     strokeWidthDp = entity.strokeWidthDp,
+                    points = com.HrshD1eux.DocLite.models.DrawingPoint.deserializeList(entity.pointsJson),
                     noteText = entity.noteText,
                     signatureBitmapPath = entity.signatureBitmapPath,
                     boundsLeftRatio = entity.boundsLeftRatio,
@@ -113,7 +114,7 @@ class DocumentRepository(
                 annotationType = annotation.type.name,
                 colorHex = annotation.colorHex,
                 strokeWidthDp = annotation.strokeWidthDp,
-                pointsJson = "",
+                pointsJson = com.HrshD1eux.DocLite.models.DrawingPoint.serializeList(annotation.points),
                 noteText = annotation.noteText,
                 signatureBitmapPath = annotation.signatureBitmapPath,
                 boundsLeftRatio = annotation.boundsLeftRatio,

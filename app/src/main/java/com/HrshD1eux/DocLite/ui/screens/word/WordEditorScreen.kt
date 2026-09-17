@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
@@ -433,28 +434,82 @@ fun WordEditorScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             if (uiState.isEditing) {
-                                itemsIndexed(uiState.document.paragraphs) { index, paragraph ->
-                                    OutlinedTextField(
-                                        value = paragraph.getPlainText(),
-                                        onValueChange = { newText -> viewModel.updateParagraphText(index, newText) },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .testTag("word_p_input_$index"),
-                                        shape = RoundedCornerShape(8.dp),
-                                        textStyle = androidx.compose.ui.text.TextStyle(
-                                            fontSize = uiState.fontSizeSp.sp,
-                                            fontWeight = if (uiState.isBold) FontWeight.Bold else FontWeight.Normal
-                                        ),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                        )
+                                // Edit mode: iterate bodyElements — paragraphs are editable, tables are read-only
+                                val elements = uiState.document.bodyElements
+                                var paragraphIndex = 0
+
+                                items(elements.size) { elementIndex ->
+                                    val element = elements[elementIndex]
+
+                                    when (element) {
+                                        is WordBodyElement.ParagraphElement -> {
+                                            val currentParagraphIndex = paragraphIndex
+                                            paragraphIndex++
+
+                                            // Insert-paragraph button above each paragraph
+                                            InsertParagraphButton(
+                                                onClick = { viewModel.insertParagraphAt(currentParagraphIndex) }
+                                            )
+
+                                            // Editable paragraph with delete button
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.Top
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = element.paragraph.getPlainText(),
+                                                    onValueChange = { newText ->
+                                                        viewModel.updateParagraphText(currentParagraphIndex, newText)
+                                                    },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .testTag("word_p_input_$currentParagraphIndex"),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                                        fontSize = uiState.fontSizeSp.sp,
+                                                        fontWeight = if (uiState.isBold) FontWeight.Bold else FontWeight.Normal
+                                                    ),
+                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                                    )
+                                                )
+                                                // Delete paragraph button
+                                                if (uiState.document.paragraphs.size > 1) {
+                                                    IconButton(
+                                                        onClick = { viewModel.deleteParagraph(currentParagraphIndex) },
+                                                        modifier = Modifier.size(36.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Close,
+                                                            contentDescription = "Delete Paragraph",
+                                                            modifier = Modifier.size(16.dp),
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        is WordBodyElement.TableElement -> {
+                                            // Tables rendered as read-only cards in edit mode (same as view mode)
+                                            ReadOnlyTableCard(table = element.table)
+                                        }
+                                    }
+                                }
+
+                                // Add paragraph button at the bottom
+                                item {
+                                    InsertParagraphButton(
+                                        onClick = viewModel::addParagraph,
+                                        label = "Add Paragraph"
                                     )
                                 }
                             } else {
+                                // View mode: iterate bodyElements with rich text rendering
                                 val elements = uiState.document.bodyElements.ifEmpty {
                                     uiState.document.paragraphs.map { WordBodyElement.ParagraphElement(it) }
                                 }
@@ -489,57 +544,8 @@ fun WordEditorScreen(
                                         }
 
                                         is WordBodyElement.TableElement -> {
-                                            val table = element.table
-                                            Card(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 4.dp),
-                                                shape = RoundedCornerShape(4.dp),
-                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                                            ) {
-                                                Column(modifier = Modifier.fillMaxWidth()) {
-                                                    table.rows.forEachIndexed { rIdx, row ->
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .then(
-                                                                    if (rIdx == 0) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-                                                                    else Modifier
-                                                                )
-                                                        ) {
-                                                            row.cells.forEach { cell ->
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .weight(1f)
-                                                                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                                                                ) {
-                                                                    Text(
-                                                                        text = cell.text,
-                                                                        style = MaterialTheme.typography.bodySmall.copy(
-                                                                            fontWeight = if (cell.isHeader) FontWeight.Bold else FontWeight.Normal
-                                                                        ),
-                                                                        color = MaterialTheme.colorScheme.onSurface
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            ReadOnlyTableCard(table = element.table)
                                         }
-                                    }
-                                }
-                            }
-
-                            if (uiState.isEditing) {
-                                item {
-                                    IconButton(
-                                        onClick = viewModel::addParagraph,
-                                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = "Add Paragraph")
                                     }
                                 }
                             }
@@ -551,3 +557,75 @@ fun WordEditorScreen(
     }
 }
 
+/**
+ * Reusable read-only table card used in both view and edit modes.
+ */
+@Composable
+private fun ReadOnlyTableCard(table: com.HrshD1eux.DocLite.models.WordTable) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            table.rows.forEachIndexed { rIdx, row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (rIdx == 0) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+                            else Modifier
+                        )
+                ) {
+                    row.cells.forEach { cell ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = cell.text,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = if (cell.isHeader) FontWeight.Bold else FontWeight.Normal
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Small insert-paragraph button shown between elements in edit mode.
+ */
+@Composable
+private fun InsertParagraphButton(
+    onClick: () -> Unit,
+    label: String? = null
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = label ?: "Insert Paragraph",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+            )
+        }
+    }
+}

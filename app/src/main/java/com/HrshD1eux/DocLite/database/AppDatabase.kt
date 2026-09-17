@@ -15,6 +15,9 @@ import com.HrshD1eux.DocLite.database.entity.PasswordProtectionEntity
 import com.HrshD1eux.DocLite.database.entity.PdfAnnotationEntity
 import com.HrshD1eux.DocLite.database.entity.RecentFileEntity
 
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
 @Database(
     entities = [
         RecentFileEntity::class,
@@ -23,7 +26,7 @@ import com.HrshD1eux.DocLite.database.entity.RecentFileEntity
         DocumentMetadataEntity::class,
         PasswordProtectionEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,6 +40,12 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_fileUri` ON `pdf_annotations` (`fileUri`)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -44,7 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "doclite_database"
                 )
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                .addMigrations(MIGRATION_2_3)
                 .build()
                 INSTANCE = instance
                 instance

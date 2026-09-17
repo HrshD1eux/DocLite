@@ -9,7 +9,26 @@ enum class AnnotationType {
 data class DrawingPoint(
     val xRatio: Float,
     val yRatio: Float
-)
+) {
+    companion object {
+        fun serializeList(points: List<DrawingPoint>): String {
+            if (points.isEmpty()) return ""
+            return points.joinToString(";") { "${it.xRatio},${it.yRatio}" }
+        }
+
+        fun deserializeList(data: String): List<DrawingPoint> {
+            if (data.isBlank()) return emptyList()
+            return data.split(";").mapNotNull { token ->
+                val coords = token.split(",")
+                if (coords.size == 2) {
+                    val x = coords[0].toFloatOrNull()
+                    val y = coords[1].toFloatOrNull()
+                    if (x != null && y != null) DrawingPoint(x, y) else null
+                } else null
+            }
+        }
+    }
+}
 
 data class PdfAnnotation(
     val id: String = java.util.UUID.randomUUID().toString(),

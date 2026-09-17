@@ -71,8 +71,6 @@ class WordEngine(private val context: Context) {
                 document.use { doc ->
                     val hasPictures = try { doc.allPictures.isNotEmpty() } catch (t: Throwable) { false }
 
-                    val paragraphs = mutableListOf<Paragraph>()
-                    val tables = mutableListOf<WordTable>()
                     val bodyElements = mutableListOf<WordBodyElement>()
                     var wordCount = 0
                     var charCount = 0
@@ -151,7 +149,6 @@ class WordEngine(private val context: Context) {
                                     headerLevel = headerLevel,
                                     bulletPrefix = bulletPrefix
                                 )
-                                paragraphs.add(paragraph)
                                 bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
                             }
 
@@ -171,18 +168,19 @@ class WordEngine(private val context: Context) {
                                     tableRows.add(WordTableRow(cells))
                                 }
                                 val wordTable = WordTable(rows = tableRows)
-                                tables.add(wordTable)
                                 bodyElements.add(WordBodyElement.TableElement(wordTable))
                             }
                         }
                     }
 
+                    val finalElements = bodyElements.ifEmpty {
+                        listOf(WordBodyElement.ParagraphElement(Paragraph()))
+                    }
+
                     WordDocument(
                         title = fileName,
                         fileUri = uri.toString(),
-                        paragraphs = paragraphs.ifEmpty { listOf(Paragraph()) },
-                        tables = tables,
-                        bodyElements = bodyElements.ifEmpty { paragraphs.map { WordBodyElement.ParagraphElement(it) } },
+                        bodyElements = finalElements,
                         wordCount = wordCount,
                         characterCount = charCount,
                         hasUnrecognizedElements = hasPictures
@@ -195,74 +193,62 @@ class WordEngine(private val context: Context) {
     }
 
     suspend fun saveDocument(uri: Uri, document: WordDocument): Boolean = withContext(Dispatchers.IO) {
+        val xwpf = XWPFDocument()
         try {
-            val xwpf = XWPFDocument()
-            try {
-                val elementsToSave = if (document.bodyElements.isNotEmpty()) {
-                    document.bodyElements
-                } else {
-                    document.paragraphs.map { WordBodyElement.ParagraphElement(it) }
-                }
+            document.bodyElements.forEach { bodyElem ->
+                when (bodyElem) {
+                    is WordBodyElement.ParagraphElement -> {
+                        val paraModel = bodyElem.paragraph
+                        val xwpfParagraph = xwpf.createParagraph()
 
-                elementsToSave.forEach { bodyElem ->
-                    when (bodyElem) {
-                        is WordBodyElement.ParagraphElement -> {
-                            val paraModel = bodyElem.paragraph
-                            val xwpfParagraph = xwpf.createParagraph()
+                        xwpfParagraph.alignment = when (paraModel.alignment) {
+                            TextAlignment.CENTER -> ParagraphAlignment.CENTER
+                            TextAlignment.RIGHT -> ParagraphAlignment.RIGHT
+                            TextAlignment.JUSTIFY -> ParagraphAlignment.BOTH
+                            else -> ParagraphAlignment.LEFT
+                        }
 
-                            xwpfParagraph.alignment = when (paraModel.alignment) {
-                                TextAlignment.CENTER -> ParagraphAlignment.CENTER
-                                TextAlignment.RIGHT -> ParagraphAlignment.RIGHT
-                                TextAlignment.JUSTIFY -> ParagraphAlignment.BOTH
-                                else -> ParagraphAlignment.LEFT
+                        paraModel.runs.forEach { runModel ->
+                            val xwpfRun = xwpfParagraph.createRun()
+                            xwpfRun.setText(runModel.text)
+                            xwpfRun.isBold = runModel.style.isBold
+                            xwpfRun.isItalic = runModel.style.isItalic
+                            if (runModel.style.isUnderline) {
+                                xwpfRun.underline = org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE
                             }
+                            xwpfRun.fontSize = runModel.style.fontSizeSp.toInt()
 
-                            paraModel.runs.forEach { runModel ->
-                                val xwpfRun = xwpfParagraph.createRun()
-                                xwpfRun.setText(runModel.text)
-                                xwpfRun.isBold = runModel.style.isBold
-                                xwpfRun.isItalic = runModel.style.isItalic
-                                if (runModel.style.isUnderline) {
-                                    xwpfRun.underline = org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE
-                                }
-                                xwpfRun.fontSize = runModel.style.fontSizeSp.toInt()
-
-                                val colorHex = runModel.style.fontColorHex.removePrefix("#")
-                                if (colorHex.length == 6) {
-                                    xwpfRun.setColor(colorHex)
-                                }
+                            val colorHex = runModel.style.fontColorHex.removePrefix("#")
+                            if (colorHex.length == 6) {
+                                xwpfRun.setColor(colorHex)
                             }
                         }
-                        is WordBodyElement.TableElement -> {
-                            val tableModel = bodyElem.table
-                            if (tableModel.rows.isNotEmpty()) {
-                                val numCols = tableModel.rows.first().cells.size.coerceAtLeast(1)
-                                val xwpfTable = xwpf.createTable(tableModel.rows.size, numCols)
-                                tableModel.rows.forEachIndexed { rIdx, row ->
-                                    row.cells.forEachIndexed { cIdx, cell ->
-                                        val rowObj = xwpfTable.getRow(rIdx) ?: xwpfTable.createRow()
-                                        val cellObj = if (cIdx < rowObj.tableCells.size) rowObj.getCell(cIdx) else rowObj.addNewTableCell()
-                                        cellObj.text = cell.text
-                                    }
+                    }
+                    is WordBodyElement.TableElement -> {
+                        val tableModel = bodyElem.table
+                        if (tableModel.rows.isNotEmpty()) {
+                            val numCols = tableModel.rows.first().cells.size.coerceAtLeast(1)
+                            val xwpfTable = xwpf.createTable(tableModel.rows.size, numCols)
+                            tableModel.rows.forEachIndexed { rIdx, row ->
+                                row.cells.forEachIndexed { cIdx, cell ->
+                                    val rowObj = xwpfTable.getRow(rIdx) ?: xwpfTable.createRow()
+                                    val cellObj = if (cIdx < rowObj.tableCells.size) rowObj.getCell(cIdx) else rowObj.addNewTableCell()
+                                    cellObj.text = cell.text
                                 }
                             }
                         }
                     }
                 }
-
-                context.contentResolver.openOutputStream(uri, "rwt")?.use { outputStream ->
-                    xwpf.write(outputStream)
-                } ?: return@withContext false
-                true
-            } finally {
-                xwpf.close()
             }
+
+            val outputStream = context.contentResolver.openOutputStream(uri, "wt")
+                ?: throw java.io.IOException("Could not open output stream for saving. The file may be read-only or the storage provider denied access.")
+            outputStream.use { xwpf.write(it) }
+            true
         } catch (e: OutOfMemoryError) {
-            e.printStackTrace()
-            false
-        } catch (t: Throwable) {
-            t.printStackTrace()
-            false
+            throw IllegalStateException("Not enough memory to save this document. Try closing other apps.", e)
+        } finally {
+            xwpf.close()
         }
     }
 
@@ -296,20 +282,10 @@ class WordEngine(private val context: Context) {
                 if (file.exists() && file.canRead()) java.io.FileInputStream(file)
                 else context.contentResolver.openInputStream(uri)
             } else {
-                context.contentResolver.openInputStream(uri) ?: uri.path?.let { path ->
-                    val file = File(path)
-                    if (file.exists() && file.canRead()) java.io.FileInputStream(file) else null
-                }
+                context.contentResolver.openInputStream(uri)
             }
         } catch (t: Throwable) {
-            try {
-                uri.path?.let { path ->
-                    val file = File(path)
-                    if (file.exists() && file.canRead()) java.io.FileInputStream(file) else null
-                }
-            } catch (ignored: Throwable) {
-                null
-            }
+            null
         }
     }
 }

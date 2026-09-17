@@ -119,4 +119,37 @@ class PdfViewerUnitTest {
         assertFalse(isAnnotationMode)
         assertNull(selectedTool)
     }
+
+    @Test
+    fun drawingPoint_serializationAndDeserialization_preservesCoordinatesAccurately() {
+        val originalPoints = listOf(
+            com.HrshD1eux.DocLite.models.DrawingPoint(0.12f, 0.34f),
+            com.HrshD1eux.DocLite.models.DrawingPoint(0.56f, 0.78f),
+            com.HrshD1eux.DocLite.models.DrawingPoint(0.99f, 0.01f)
+        )
+
+        val serialized = com.HrshD1eux.DocLite.models.DrawingPoint.serializeList(originalPoints)
+        val deserialized = com.HrshD1eux.DocLite.models.DrawingPoint.deserializeList(serialized)
+
+        assertEquals(3, deserialized.size)
+        assertEquals(0.12f, deserialized[0].xRatio, 0.001f)
+        assertEquals(0.34f, deserialized[0].yRatio, 0.001f)
+        assertEquals(0.56f, deserialized[1].xRatio, 0.001f)
+        assertEquals(0.78f, deserialized[1].yRatio, 0.001f)
+        assertEquals(0.99f, deserialized[2].xRatio, 0.001f)
+        assertEquals(0.01f, deserialized[2].yRatio, 0.001f)
+    }
+
+    @Test
+    fun drawingPoint_deserializeEmptyOrBlank_returnsEmptyList() {
+        assertTrue(com.HrshD1eux.DocLite.models.DrawingPoint.deserializeList("").isEmpty())
+        assertTrue(com.HrshD1eux.DocLite.models.DrawingPoint.deserializeList("   ").isEmpty())
+    }
+
+    @Test
+    fun passwordRequiredException_createsProperException() {
+        val ex = com.HrshD1eux.DocLite.office.pdf.PasswordRequiredException("This PDF is password-protected")
+        assertTrue(ex.message!!.contains("password-protected"))
+    }
 }
+

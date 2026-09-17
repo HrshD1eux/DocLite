@@ -96,17 +96,25 @@ class BankStatementParser(private val context: Context) {
             val text = stripper.getText(doc) ?: ""
             val lines = text.lines()
 
-            val dateRegex = Regex("^(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}[/-]\\d{1,2}[/-]\\d{1,2})\\s+(.+?)\\s+([\\d,]+\\.\\d{2}|[\\d,]+)(?:\\s+([\\d,]+\\.\\d{2}|[\\d,]+))?$")
+            val dateStartRegex = Regex("^(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}[/-]\\d{1,2}[/-]\\d{1,2})")
+            val dateFullRegex = Regex("^(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}[/-]\\d{1,2}[/-]\\d{1,2})\\s+(.+?)\\s+([\\d,]+\\.\\d{2}|[\\d,]+)(?:\\s+([\\d,]+\\.\\d{2}|[\\d,]+))?(?:\\s+([\\d,]+\\.\\d{2}|[\\d,]+))?$")
 
             for (line in lines) {
                 val trimmed = line.trim()
                 if (trimmed.isBlank()) continue
 
+                // Skip recurring page headers and footers
+                val isBoilerplate = trimmed.startsWith("Page ", ignoreCase = true) ||
+                    trimmed.startsWith("Statement of Account", ignoreCase = true) ||
+                    trimmed.contains("Generated On:", ignoreCase = true) ||
+                    trimmed.contains("This is a system generated", ignoreCase = true)
+                if (isBoilerplate) continue
+
                 val tokens = trimmed.split(Regex("\\s{2,}|\t")).map { it.trim() }.filter { it.isNotBlank() }
                 if (tokens.size >= 2) {
                     resultRows.add(tokens)
                 } else {
-                    val match = dateRegex.find(trimmed)
+                    val match = dateFullRegex.find(trimmed)
                     if (match != null) {
                         val row = mutableListOf<String>()
                         row.add(match.groupValues[1])
@@ -115,7 +123,21 @@ class BankStatementParser(private val context: Context) {
                         if (match.groupValues.size > 4 && match.groupValues[4].isNotBlank()) {
                             row.add(match.groupValues[4])
                         }
+                        if (match.groupValues.size > 5 && match.groupValues[5].isNotBlank()) {
+                            row.add(match.groupValues[5])
+                        }
                         resultRows.add(row)
+                    } else if (resultRows.isNotEmpty() && !dateStartRegex.containsMatchIn(trimmed)) {
+                        // Multi-line narration stitching: append continuation to previous row
+                        val lastIndex = resultRows.lastIndex
+                        val prevRow = resultRows[lastIndex].toMutableList()
+                        if (prevRow.size >= 2) {
+                            prevRow[1] = "${prevRow[1]} $trimmed"
+                            resultRows[lastIndex] = prevRow
+                        } else {
+                            prevRow[0] = "${prevRow[0]} $trimmed"
+                            resultRows[lastIndex] = prevRow
+                        }
                     } else {
                         resultRows.add(listOf(trimmed))
                     }

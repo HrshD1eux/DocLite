@@ -77,8 +77,6 @@ class ExampleRobolectricTest {
     val doc = com.HrshD1eux.DocLite.models.WordDocument(
       title = "test.docx",
       fileUri = "content://test.docx",
-      paragraphs = listOf(para),
-      tables = listOf(table),
       bodyElements = listOf(
         com.HrshD1eux.DocLite.models.WordBodyElement.ParagraphElement(para),
         com.HrshD1eux.DocLite.models.WordBodyElement.TableElement(table)

@@ -3,7 +3,7 @@ package com.HrshD1eux.DocLite.models
 import androidx.compose.ui.graphics.Color
 
 enum class NumberFormat {
-    GENERAL, TEXT, NUMBER, CURRENCY, PERCENTAGE
+    GENERAL, TEXT, NUMBER, CURRENCY, PERCENTAGE, DATE, BOOLEAN
 }
 
 data class CellFormat(
@@ -64,6 +64,7 @@ data class Sheet(
             val rowStr = uppercase.dropWhile { it.isLetter() }
 
             if (colStr.isEmpty() || rowStr.isEmpty()) return null
+            if (!colStr.all { it in 'A'..'Z' } || !rowStr.all { it.isDigit() }) return null
 
             var col = 0
             for (char in colStr) {
@@ -71,8 +72,23 @@ data class Sheet(
             }
             col -= 1
 
-            val row = (rowStr.toIntOrNull() ?: 1) - 1
+            val rowNum = rowStr.toIntOrNull() ?: return null
+            if (rowNum <= 0) return null
+            val row = rowNum - 1
             return Pair(row, col)
+        }
+
+        fun parseRangeCoords(rangeStr: String): Pair<Pair<Int, Int>, Pair<Int, Int>>? {
+            val clean = rangeStr.uppercase().trim()
+            val parts = clean.split(":")
+            if (parts.size != 2) return null
+            val start = cellNameToCoords(parts[0]) ?: return null
+            val end = cellNameToCoords(parts[1]) ?: return null
+            val minRow = minOf(start.first, end.first)
+            val maxRow = maxOf(start.first, end.first)
+            val minCol = minOf(start.second, end.second)
+            val maxCol = maxOf(start.second, end.second)
+            return Pair(Pair(minRow, minCol), Pair(maxRow, maxCol))
         }
     }
 }

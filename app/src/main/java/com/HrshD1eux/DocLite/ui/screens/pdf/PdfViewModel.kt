@@ -8,22 +8,30 @@ import androidx.lifecycle.viewModelScope
 import com.HrshD1eux.DocLite.models.AnnotationType
 import com.HrshD1eux.DocLite.models.DocumentFile
 import com.HrshD1eux.DocLite.models.DocumentFormat
+import com.HrshD1eux.DocLite.models.DrawingPoint
 import com.HrshD1eux.DocLite.models.PdfAnnotation
 import com.HrshD1eux.DocLite.models.PdfSearchResult
+import com.HrshD1eux.DocLite.office.pdf.PasswordRequiredException
 import com.HrshD1eux.DocLite.repository.DocumentRepository
 import com.HrshD1eux.DocLite.repository.FileRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface PdfUiState {
     data object Loading : PdfUiState
+    data class PasswordRequired(
+        val uri: Uri,
+        val errorMessage: String? = null
+    ) : PdfUiState
     data class Success(
         val uri: Uri,
         val pageCount: Int,
         val currentPageIndex: Int = 0,
-        val currentPageBitmap: Bitmap? = null,
         val annotations: List<PdfAnnotation> = emptyList(),
         val selectedAnnotationTool: AnnotationType? = null,
         val isAnnotationMode: Boolean = false,
@@ -46,7 +54,8 @@ class PdfViewModel(
     val uiState: StateFlow<PdfUiState> = _uiState.asStateFlow()
 
     private val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024).toInt()
-    private val cacheSizeKb = (maxMemoryKb / 8).coerceAtLeast(16 * 1024)
+    // With RGB_565 (3.3MB per page), 32MB+ holds 10+ pages comfortably
+    private val cacheSizeKb = (maxMemoryKb / 6).coerceAtLeast(32 * 1024)
 
     private val pageCache = object : LruCache<Int, Bitmap>(cacheSizeKb) {
         override fun sizeOf(key: Int, bitmap: Bitmap): Int {
@@ -54,33 +63,47 @@ class PdfViewModel(
         }
     }
 
-    fun openPdf(uri: Uri) {
+    private var searchJob: Job? = null
+
+    fun openPdf(uri: Uri, password: String? = null) {
         viewModelScope.launch {
             pageCache.evictAll()
-            _uiState.value = PdfUiState.Loading
-            val pageCount = documentRepository.pdfEngine.openPdf(uri)
-            if (pageCount > 0) {
-                _uiState.value = PdfUiState.Success(
-                    uri = uri,
-                    pageCount = pageCount
-                )
+            if (password == null) {
+                _uiState.value = PdfUiState.Loading
+            }
 
-                fileRepository.recordRecentFile(
-                    DocumentFile(
-                        id = uri.toString(),
-                        name = getFileName(uri),
-                        path = uri.path ?: "",
-                        uriString = uri.toString(),
-                        sizeBytes = 10240,
-                        lastModified = System.currentTimeMillis(),
-                        format = DocumentFormat.PDF,
+            try {
+                val pageCount = documentRepository.pdfEngine.openPdf(uri, password)
+                if (pageCount > 0) {
+                    _uiState.value = PdfUiState.Success(
+                        uri = uri,
                         pageCount = pageCount
                     )
-                )
 
-                observeAnnotations(uri.toString())
-            } else {
-                _uiState.value = PdfUiState.Error("Unable to load PDF document.")
+                    fileRepository.recordRecentFile(
+                        DocumentFile(
+                            id = uri.toString(),
+                            name = getFileName(uri),
+                            path = uri.path ?: "",
+                            uriString = uri.toString(),
+                            sizeBytes = 10240,
+                            lastModified = System.currentTimeMillis(),
+                            format = DocumentFormat.PDF,
+                            pageCount = pageCount
+                        )
+                    )
+
+                    observeAnnotations(uri.toString())
+                } else {
+                    _uiState.value = PdfUiState.Error("Unable to load PDF document.")
+                }
+            } catch (e: PasswordRequiredException) {
+                _uiState.value = PdfUiState.PasswordRequired(
+                    uri = uri,
+                    errorMessage = if (password != null) "Invalid password. Please try again." else null
+                )
+            } catch (e: Exception) {
+                _uiState.value = PdfUiState.Error(e.message ?: "Failed to open PDF document.")
             }
         }
     }
@@ -113,8 +136,9 @@ class PdfViewModel(
     private fun observeAnnotations(fileUri: String) {
         viewModelScope.launch {
             documentRepository.getPdfAnnotationsFlow(fileUri).collect { annotations ->
-                val currentState = _uiState.value as? PdfUiState.Success ?: return@collect
-                _uiState.value = currentState.copy(annotations = annotations)
+                _uiState.update { state ->
+                    (state as? PdfUiState.Success)?.copy(annotations = annotations) ?: state
+                }
             }
         }
     }
@@ -137,7 +161,7 @@ class PdfViewModel(
         val newMode = enabled ?: !currentState.isAnnotationMode
         _uiState.value = currentState.copy(
             isAnnotationMode = newMode,
-            selectedAnnotationTool = if (!newMode) null else currentState.selectedAnnotationTool
+            selectedAnnotationTool = if (!newMode) null else (currentState.selectedAnnotationTool ?: AnnotationType.HIGHLIGHT)
         )
     }
 
@@ -148,25 +172,39 @@ class PdfViewModel(
         )
     }
 
-    fun addHighlightAnnotation(pageIndex: Int) {
+    fun addHighlightAnnotation(
+        pageIndex: Int,
+        boundsLeftRatio: Float = 0.08f,
+        boundsTopRatio: Float = 0.15f,
+        boundsWidthRatio: Float = 0.84f,
+        boundsHeightRatio: Float = 0.04f,
+        colorHex: String = "#FFEB3B"
+    ) {
         val currentState = _uiState.value as? PdfUiState.Success ?: return
         viewModelScope.launch {
             val annotation = PdfAnnotation(
                 fileUri = currentState.uri.toString(),
                 pageIndex = pageIndex,
                 type = AnnotationType.HIGHLIGHT,
-                colorHex = "#FFEB3B",
-                boundsLeftRatio = 0.1f,
-                boundsTopRatio = 0.2f,
-                boundsWidthRatio = 0.8f,
-                boundsHeightRatio = 0.05f
+                colorHex = colorHex,
+                boundsLeftRatio = boundsLeftRatio,
+                boundsTopRatio = boundsTopRatio,
+                boundsWidthRatio = boundsWidthRatio,
+                boundsHeightRatio = boundsHeightRatio
             )
             documentRepository.savePdfAnnotation(annotation)
-            _uiState.value = currentState.copy(statusMessage = "Highlight added")
+            _uiState.update { state ->
+                (state as? PdfUiState.Success)?.copy(statusMessage = "Highlight added") ?: state
+            }
         }
     }
 
-    fun addStickyNoteAnnotation(pageIndex: Int, text: String) {
+    fun addStickyNoteAnnotation(
+        pageIndex: Int,
+        text: String,
+        boundsLeftRatio: Float = 0.7f,
+        boundsTopRatio: Float = 0.1f
+    ) {
         val currentState = _uiState.value as? PdfUiState.Success ?: return
         viewModelScope.launch {
             val annotation = PdfAnnotation(
@@ -175,13 +213,59 @@ class PdfViewModel(
                 type = AnnotationType.STICKY_NOTE,
                 colorHex = "#2196F3",
                 noteText = text,
-                boundsLeftRatio = 0.7f,
-                boundsTopRatio = 0.1f,
-                boundsWidthRatio = 0.2f,
-                boundsHeightRatio = 0.1f
+                boundsLeftRatio = boundsLeftRatio,
+                boundsTopRatio = boundsTopRatio,
+                boundsWidthRatio = 0.25f,
+                boundsHeightRatio = 0.08f
             )
             documentRepository.savePdfAnnotation(annotation)
-            _uiState.value = currentState.copy(statusMessage = "Sticky Note added")
+            _uiState.update { state ->
+                (state as? PdfUiState.Success)?.copy(statusMessage = "Sticky Note added") ?: state
+            }
+        }
+    }
+
+    fun addFreeDrawAnnotation(
+        pageIndex: Int,
+        points: List<DrawingPoint>,
+        colorHex: String = "#F44336",
+        strokeWidthDp: Float = 3f
+    ) {
+        if (points.size < 2) return
+        val currentState = _uiState.value as? PdfUiState.Success ?: return
+        viewModelScope.launch {
+            val annotation = PdfAnnotation(
+                fileUri = currentState.uri.toString(),
+                pageIndex = pageIndex,
+                type = AnnotationType.FREE_DRAW,
+                colorHex = colorHex,
+                strokeWidthDp = strokeWidthDp,
+                points = points
+            )
+            documentRepository.savePdfAnnotation(annotation)
+            _uiState.update { state ->
+                (state as? PdfUiState.Success)?.copy(statusMessage = "Drawing saved") ?: state
+            }
+        }
+    }
+
+    fun deleteAnnotation(id: String) {
+        viewModelScope.launch {
+            documentRepository.deletePdfAnnotation(id)
+            _uiState.update { state ->
+                (state as? PdfUiState.Success)?.copy(statusMessage = "Annotation deleted") ?: state
+            }
+        }
+    }
+
+    fun prepareSharePdf(onReady: (Uri) -> Unit) {
+        val currentState = _uiState.value as? PdfUiState.Success ?: return
+        viewModelScope.launch {
+            val exportUri = documentRepository.pdfEngine.exportAnnotatedPdf(
+                currentState.uri,
+                currentState.annotations
+            )
+            onReady(exportUri)
         }
     }
 
@@ -189,45 +273,48 @@ class PdfViewModel(
         val currentState = _uiState.value as? PdfUiState.Success ?: return
         val newActive = active ?: !currentState.isSearchActive
         if (!newActive) {
-            _uiState.value = currentState.copy(
-                isSearchActive = false,
-                searchQuery = "",
-                searchResults = emptyList(),
-                currentMatchIndex = 0,
-                isSearching = false
-            )
+            clearSearch()
+            _uiState.value = currentState.copy(isSearchActive = false)
         } else {
             _uiState.value = currentState.copy(isSearchActive = true)
         }
     }
 
     fun clearSearch() {
-        val currentState = _uiState.value as? PdfUiState.Success ?: return
-        _uiState.value = currentState.copy(
-            searchQuery = "",
-            searchResults = emptyList(),
-            currentMatchIndex = 0,
-            isSearching = false
-        )
+        searchJob?.cancel()
+        _uiState.update { state ->
+            (state as? PdfUiState.Success)?.copy(
+                searchQuery = "",
+                searchResults = emptyList(),
+                currentMatchIndex = 0,
+                isSearching = false
+            ) ?: state
+        }
     }
 
     fun performSearch(query: String) {
+        searchJob?.cancel()
         val currentState = _uiState.value as? PdfUiState.Success ?: return
+
         if (query.isBlank()) {
             clearSearch()
             return
         }
+
         _uiState.value = currentState.copy(searchQuery = query, isSearching = true)
 
-        viewModelScope.launch {
+        // Debounce keystrokes by 350ms to prevent ANR and OOM on large PDFs
+        searchJob = viewModelScope.launch {
+            delay(350)
             val results = documentRepository.pdfEngine.searchInPdf(query)
-            val state = _uiState.value as? PdfUiState.Success ?: return@launch
-            if (state.searchQuery == query) {
-                _uiState.value = state.copy(
-                    searchResults = results,
-                    currentMatchIndex = 0,
-                    isSearching = false
-                )
+            _uiState.update { state ->
+                if (state is PdfUiState.Success && state.searchQuery == query) {
+                    state.copy(
+                        searchResults = results,
+                        currentMatchIndex = 0,
+                        isSearching = false
+                    )
+                } else state
             }
         }
     }
@@ -258,8 +345,8 @@ class PdfViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        searchJob?.cancel()
         pageCache.evictAll()
         documentRepository.pdfEngine.close()
     }
 }
-
