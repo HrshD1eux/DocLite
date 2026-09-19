@@ -110,6 +110,86 @@ class OfficeEngineIntegrationTest {
     }
 
     @Test
+    fun wordEngine_nativeXmlZipFile_parsesFormattingAndTablesRobustly() = runTest {
+        val testFile = File(context.cacheDir, "test_native_xml.docx")
+        if (testFile.exists()) testFile.delete()
+
+        // Create a raw docx zip archive directly with OpenXML word/document.xml
+        val docXml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:jc w:val="center"/><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r>
+        <w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="FF0000"/></w:rPr>
+        <w:t xml:space="preserve">Native Title Heading</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:rPr><w:i/></w:rPr>
+        <w:t>Italicized paragraph text</w:t>
+      </w:r>
+    </w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Col A</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Col B</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Val 1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Val 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:sectPr/>
+  </w:body>
+</w:document>""".trimIndent()
+
+        val contentTypes = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>""".trimIndent()
+
+        val zos = java.util.zip.ZipOutputStream(testFile.outputStream())
+        zos.use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("[Content_Types].xml"))
+            zip.write(contentTypes.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+
+            zip.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+            zip.write(docXml.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+
+        val uri = Uri.fromFile(testFile)
+        val loadedDoc = wordEngine.loadDocument(uri)
+
+        // Verify document structure
+        assertTrue("Must have at least 2 paragraphs", loadedDoc.paragraphs.size >= 2)
+        assertEquals("Native Title Heading", loadedDoc.paragraphs[0].getPlainText().trim())
+        assertTrue("Heading must be flagged as header", loadedDoc.paragraphs[0].isHeader)
+        assertEquals(com.HrshD1eux.DocLite.models.TextAlignment.CENTER, loadedDoc.paragraphs[0].alignment)
+        assertTrue("First run must be bold", loadedDoc.paragraphs[0].runs[0].style.isBold)
+        assertEquals("#FF0000", loadedDoc.paragraphs[0].runs[0].style.fontColorHex)
+        assertEquals(18f, loadedDoc.paragraphs[0].runs[0].style.fontSizeSp)
+
+        // Verify second paragraph
+        assertEquals("Italicized paragraph text", loadedDoc.paragraphs[1].getPlainText().trim())
+        assertTrue("Second paragraph must be italic", loadedDoc.paragraphs[1].runs[0].style.isItalic)
+
+        // Verify table
+        val tableElem = loadedDoc.bodyElements.filterIsInstance<WordBodyElement.TableElement>().firstOrNull()
+        assertNotNull("Table element must be parsed", tableElem)
+        assertEquals(2, tableElem!!.table.rows.size)
+        assertEquals("Col A", tableElem.table.rows[0].cells[0].text.trim())
+        assertEquals("Col B", tableElem.table.rows[0].cells[1].text.trim())
+        assertEquals("Val 1", tableElem.table.rows[1].cells[0].text.trim())
+        assertEquals("Val 2", tableElem.table.rows[1].cells[1].text.trim())
+    }
+
+    @Test
     fun excelEngine_saveAndReloadRoundTrip_preservesCellsAndValues() = runTest {
         val testFile = File(context.cacheDir, "test_roundtrip.xlsx")
         if (testFile.exists()) testFile.delete()
@@ -269,6 +349,12 @@ class OfficeEngineIntegrationTest {
         // 2. Aspect Ratio
         val ratio = pdfEngine.getPageAspectRatio(0)
         assertTrue("Aspect ratio must be positive", ratio > 0.5f)
+
+        // 2b. Render Page
+        val bitmap = pdfEngine.renderPage(0, 1080)
+        if (bitmap != null) {
+            assertEquals(android.graphics.Bitmap.Config.ARGB_8888, bitmap.config)
+        }
 
         // 3. Search
         val searchResults = pdfEngine.searchInPdf("SearchTarget")

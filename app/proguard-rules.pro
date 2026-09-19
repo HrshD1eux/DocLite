@@ -12,11 +12,15 @@
 -keep class org.apache.xmlbeans.** { *; }
 -keep interface org.apache.xmlbeans.** { *; }
 -dontwarn org.apache.xmlbeans.**
+-keep class schemaorg_apache_xmlbeans.** { *; }
+-keep interface schemaorg_apache_xmlbeans.** { *; }
+-keepclassmembers class schemaorg_apache_xmlbeans.** { *; }
+-dontwarn schemaorg_apache_xmlbeans.**
 -keep class schemasMicrosoftComOffice** { *; }
 -keep class schemasMicrosoftComVml** { *; }
--keep class org.openxmlformats.schemas.** { *; }
--keep interface org.openxmlformats.schemas.** { *; }
--dontwarn org.openxmlformats.schemas.**
+-keep class org.openxmlformats.** { *; }
+-keep interface org.openxmlformats.** { *; }
+-dontwarn org.openxmlformats.**
 -keep class org.etsi.uri.** { *; }
 -dontwarn org.etsi.uri.**
 # Apache Commons & POI Companion Libraries

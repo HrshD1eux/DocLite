@@ -82,23 +82,25 @@ class PdfEngine(private val context: Context) {
 
             // Normal flow (no password provided yet)
             var pfd: ParcelFileDescriptor? = null
-            try {
-                if (uri.scheme == "file") {
-                    val f = File(uri.path ?: "")
-                    if (f.exists()) {
+            if (uri.scheme == "file") {
+                val f = File(uri.path ?: "")
+                if (f.exists() && f.canRead()) {
+                    try {
                         pfd = ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
+                    } catch (t: Throwable) {
+                        pfd = null
                     }
-                } else {
-                    pfd = context.contentResolver.openFileDescriptor(uri, "r")
                 }
-            } catch (ignored: Exception) {}
+            }
 
             if (pfd == null) {
-                // Fallback for non-seekable streams / content providers
+                // Always cache content:// URIs to a local seekable file
+                // This ensures seekability, thread-safety, and avoids contentResolver permission expiry during paging
                 val temp = File.createTempFile("pdf_cache_", ".pdf", context.cacheDir)
                 tempSeekableFile = temp
                 val inputStream = openInputStreamSafe(uri)
-                inputStream?.use { input ->
+                    ?: throw java.io.FileNotFoundException("Could not open PDF file: $uri")
+                inputStream.use { input ->
                     temp.outputStream().use { output -> input.copyTo(output) }
                 }
                 pfd = ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -106,83 +108,43 @@ class PdfEngine(private val context: Context) {
 
             parcelFileDescriptor = pfd
 
+            var count = 0
             try {
                 pdfRenderer = PdfRenderer(pfd)
-                val count = pdfRenderer?.pageCount ?: 0
-                if (count > 0) {
-                    return@withContext count
-                }
-                val pdfBoxCount = try {
-                    openInputStreamSafe(uri)?.use { stream ->
-                        PDDocument.load(stream).use { it.numberOfPages }
-                    } ?: 0
-                } catch (ignored: Exception) { 0 }
-                if (pdfBoxCount > 0) {
-                    return@withContext pdfBoxCount
-                }
-                return@withContext 0
+                count = pdfRenderer?.pageCount ?: 0
             } catch (e: SecurityException) {
-                // File is encrypted by PDF standard!
                 closeLocked()
                 throw PasswordRequiredException("This PDF document is password-protected. Please enter password.")
-            } catch (e: Exception) {
-                // Check if failure was due to non-seekable descriptor or encryption
-                if (tempSeekableFile == null) {
-                    try {
-                        pfd.close()
-                        parcelFileDescriptor = null
-                        val temp = File.createTempFile("pdf_cache_", ".pdf", context.cacheDir)
-                        tempSeekableFile = temp
-                        openInputStreamSafe(uri)?.use { input ->
-                            temp.outputStream().use { output -> input.copyTo(output) }
-                        }
-                        val seekablePfd = ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY)
-                        parcelFileDescriptor = seekablePfd
-                        pdfRenderer = PdfRenderer(seekablePfd)
-                        val count = pdfRenderer?.pageCount ?: 0
-                        if (count > 0) {
-                            return@withContext count
-                        }
-                        val pdfBoxCount = try {
-                            openInputStreamSafe(uri)?.use { stream ->
-                                PDDocument.load(stream).use { it.numberOfPages }
-                            } ?: 0
-                        } catch (ignored: Exception) { 0 }
-                        if (pdfBoxCount > 0) {
-                            return@withContext pdfBoxCount
-                        }
-                        return@withContext 0
-                    } catch (sec: SecurityException) {
-                        closeLocked()
-                        throw PasswordRequiredException("This PDF document is password-protected. Please enter password.")
-                    } catch (t: Throwable) {
-                        try {
-                            val count = openInputStreamSafe(uri)?.use { stream ->
-                                PDDocument.load(stream).use { it.numberOfPages }
-                            } ?: 0
-                            if (count > 0) {
-                                return@withContext count
-                            }
-                        } catch (ignored: Exception) {}
-
-                        closeLocked()
-                        t.printStackTrace()
-                        return@withContext 0
-                    }
-                }
-                try {
-                    val count = openInputStreamSafe(uri)?.use { stream ->
-                        PDDocument.load(stream).use { it.numberOfPages }
-                    } ?: 0
-                    if (count > 0) {
-                        return@withContext count
-                    }
-                } catch (ignored: Exception) {}
-
-                closeLocked()
-                e.printStackTrace()
-                return@withContext 0
+            } catch (t: Throwable) {
+                // Native PdfRenderer may fail under Robolectric or on non-standard PDF formats
             }
+
+            if (count <= 0) {
+                // Fallback to PDFBox for page count (e.g. under Robolectric or when PdfRenderer fails)
+                val isEncrypted = try {
+                    openInputStreamSafe(uri)?.use { stream ->
+                        PDDocument.load(stream).use { doc ->
+                            count = doc.numberOfPages
+                            doc.isEncrypted
+                        }
+                    } ?: false
+                } catch (pe: InvalidPasswordException) {
+                    true
+                } catch (ignored: Throwable) {
+                    false
+                }
+
+                if (isEncrypted) {
+                    closeLocked()
+                    throw PasswordRequiredException("This PDF document is password-protected. Please enter password.")
+                }
+            }
+
+            if (count > 0) {
+                return@withContext count
+            }
+            closeLocked()
+            throw IllegalArgumentException("PDF document contains no pages or is corrupt.")
         }
     }
 
@@ -190,51 +152,102 @@ class PdfEngine(private val context: Context) {
         synchronized(renderLock) {
             aspectRatioMap[pageIndex]?.let { return@synchronized it }
             val defaultRatio = 595f / 842f // Default A4 portrait width / height
-            val renderer = pdfRenderer ?: return@synchronized defaultRatio
-            if (pageIndex !in 0 until renderer.pageCount) return@synchronized defaultRatio
+            val renderer = pdfRenderer
 
-            var page: PdfRenderer.Page? = null
-            try {
-                page = renderer.openPage(pageIndex)
-                val ratio = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
-                aspectRatioMap[pageIndex] = ratio
-                ratio
-            } catch (t: Throwable) {
-                defaultRatio
-            } finally {
+            if (renderer != null && pageIndex in 0 until renderer.pageCount) {
+                var page: PdfRenderer.Page? = null
                 try {
-                    page?.close()
+                    page = renderer.openPage(pageIndex)
+                    val ratio = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
+                    aspectRatioMap[pageIndex] = ratio
+                    return@synchronized ratio
+                } catch (t: Throwable) {
+                    // Fall through to PDFBox
+                } finally {
+                    try {
+                        page?.close()
+                    } catch (ignored: Throwable) {}
+                }
+            }
+
+            // Fallback via PDFBox
+            val uri = currentUri
+            if (uri != null) {
+                try {
+                    openInputStreamSafe(uri)?.use { stream ->
+                        val doc = if (!currentPassword.isNullOrEmpty()) {
+                            PDDocument.load(stream, currentPassword)
+                        } else {
+                            PDDocument.load(stream)
+                        }
+                        doc.use { pdDoc ->
+                            if (pageIndex in 0 until pdDoc.numberOfPages) {
+                                val pdPage = pdDoc.getPage(pageIndex)
+                                val box = pdPage.cropBox ?: pdPage.mediaBox
+                                if (box != null && box.height > 0) {
+                                    val ratio = box.width / box.height
+                                    aspectRatioMap[pageIndex] = ratio
+                                    return@synchronized ratio
+                                }
+                            }
+                        }
+                    }
                 } catch (ignored: Throwable) {}
             }
+            defaultRatio
         }
     }
 
     suspend fun renderPage(pageIndex: Int, targetWidthPx: Int = 1080): Bitmap? = withContext(Dispatchers.IO) {
         synchronized(renderLock) {
-            val renderer = pdfRenderer ?: return@synchronized null
-            if (pageIndex !in 0 until renderer.pageCount) return@synchronized null
-
-            var page: PdfRenderer.Page? = null
-            try {
-                page = renderer.openPage(pageIndex)
-                val widthToHeight = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
-                aspectRatioMap[pageIndex] = widthToHeight
-                val targetHeightPx = (targetWidthPx / widthToHeight).toInt().coerceAtLeast(100)
-
-                // Use RGB_565 to cut memory by 50% (3.3MB vs 6.6MB for 1080p page)
-                val bitmap = Bitmap.createBitmap(targetWidthPx, targetHeightPx, Bitmap.Config.RGB_565)
-                bitmap.eraseColor(Color.WHITE)
-
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                bitmap
-            } catch (t: Throwable) {
-                t.printStackTrace()
-                null
-            } finally {
+            val renderer = pdfRenderer
+            if (renderer != null && pageIndex in 0 until renderer.pageCount) {
+                var page: PdfRenderer.Page? = null
                 try {
-                    page?.close()
-                } catch (ignored: Throwable) {}
+                    page = renderer.openPage(pageIndex)
+                    val widthToHeight = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
+                    aspectRatioMap[pageIndex] = widthToHeight
+                    val targetHeightPx = (targetWidthPx / widthToHeight).toInt().coerceAtLeast(100)
+
+                    // Android's native PdfRenderer strictly requires ARGB_8888 at the C++ layer.
+                    // Using RGB_565 causes IllegalArgumentException("Unsupported pixel format") inside native render.
+                    val bitmap = Bitmap.createBitmap(targetWidthPx, targetHeightPx, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(Color.WHITE)
+
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    return@synchronized bitmap
+                } catch (t: Throwable) {
+                    t.printStackTrace()
+                } finally {
+                    try {
+                        page?.close()
+                    } catch (ignored: Throwable) {}
+                }
             }
+
+            // Fallback rendering via PDFBox if native PdfRenderer is null or failed on this page
+            val uri = currentUri
+            if (uri != null) {
+                try {
+                    openInputStreamSafe(uri)?.use { stream ->
+                        val doc = if (!currentPassword.isNullOrEmpty()) {
+                            PDDocument.load(stream, currentPassword)
+                        } else {
+                            PDDocument.load(stream)
+                        }
+                        doc.use { pdDoc ->
+                            if (pageIndex in 0 until pdDoc.numberOfPages) {
+                                val pdfboxRenderer = com.tom_roush.pdfbox.rendering.PDFRenderer(pdDoc)
+                                val bmp = pdfboxRenderer.renderImage(pageIndex, 1.0f)
+                                return@synchronized bmp
+                            }
+                        }
+                    }
+                } catch (t: Throwable) {
+                    t.printStackTrace()
+                }
+            }
+            null
         }
     }
 

@@ -102,8 +102,8 @@ class PdfViewModel(
                     uri = uri,
                     errorMessage = if (password != null) "Invalid password. Please try again." else null
                 )
-            } catch (e: Exception) {
-                _uiState.value = PdfUiState.Error(e.message ?: "Failed to open PDF document.")
+            } catch (t: Throwable) {
+                _uiState.value = PdfUiState.Error(t.localizedMessage ?: "Failed to open PDF document.")
             }
         }
     }
