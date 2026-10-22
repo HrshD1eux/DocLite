@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -49,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -352,6 +354,32 @@ private fun IdleUploadState(
             Spacer(modifier = Modifier.width(8.dp))
             Text("Upload Statement (Excel, CSV, PDF)", style = MaterialTheme.typography.titleMedium)
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth(0.92f)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    Icons.Default.Security,
+                    contentDescription = "Privacy & Legal Notice",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "100% Offline Processing. DocLite is an offline document utility and is not an RBI-registered Account Aggregator, bank, or financial advisor. All calculations and extractions are performed locally on your device for personal informational purposes only. Do not rely on DocLite for official tax, accounting, or legal filings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -397,6 +425,12 @@ private fun AnalysisResultView(
                             text = "Total Transactions: ${result.totalTransactionCount} (${result.totalCreditCount} Cr, ${result.totalDebitCount} Dr)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Offline analytics for personal informational reference only. Always verify with official bank statements.",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.outline
                         )
                     }
 

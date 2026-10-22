@@ -19,6 +19,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Save
@@ -73,6 +78,8 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var showLicensesDialog by remember { mutableStateOf(false) }
+    var showLegalDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -357,7 +364,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = "DocLite processes all files strictly offline on your device. Zero internet permissions, zero user tracking, zero data collection.",
+                            text = "DocLite processes all your documents and statements 100% locally on your device. Zero telemetry, zero cloud tracking, zero data collection. Internet permission is used solely when you manually check for app updates via GitHub.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -368,6 +375,40 @@ fun SettingsScreen(
                             Icon(Icons.Default.Info, contentDescription = "Info", tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text("Version ${com.HrshD1eux.DocLite.BuildConfig.VERSION_NAME} (DocLite Core)", style = MaterialTheme.typography.bodyMedium)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showLicensesDialog = true }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = "Licenses", tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Open Source Licenses", style = MaterialTheme.typography.titleMedium)
+                                Text("Third-party libraries & license notices", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showLegalDialog = true }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Gavel, contentDescription = "Legal", tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Legal & Trademark Disclaimers", style = MaterialTheme.typography.titleMedium)
+                                Text("Nominative fair use & financial utility notice", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -483,6 +524,121 @@ fun SettingsScreen(
 
             else -> {}
         }
+
+        if (showLicensesDialog) {
+            AlertDialog(
+                onDismissRequest = { showLicensesDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Open Source Licenses")
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = "DocLite includes software licensed under open-source licenses:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val licenses = listOf(
+                            Triple("Apache POI", "v4.1.2 • Apache License 2.0", "Copyright (c) 2001-2020 The Apache Software Foundation\nhttps://poi.apache.org"),
+                            Triple("PDFBox-Android", "v2.0.27.0 • Apache License 2.0", "Copyright (c) 2014-2023 Tom Roush\nCopyright (c) 2002-2023 The Apache Software Foundation\nhttps://github.com/TomRoush/PdfBox-Android"),
+                            Triple("OpenCSV", "v5.9 • Apache License 2.0", "Copyright (c) 2005-2024 Bytecode Pty Ltd, Glen Smith, Mike Czapik\nhttps://opencsv.sourceforge.net"),
+                            Triple("Aalto XML & StAX API", "v1.3.3 • Apache License 2.0", "Copyright (c) FasterXML, LLC\nhttps://github.com/FasterXML/aalto-xml"),
+                            Triple("Coil Image Loading", "v2.7.0 • Apache License 2.0", "Copyright (c) 2024 Coil Contributors\nhttps://github.com/coil-kt/coil"),
+                            Triple("Android Jetpack & Compose", "Apache License 2.0", "Copyright (c) The Android Open Source Project\nhttps://android.googlesource.com"),
+                            Triple("Kotlin & Coroutines", "Apache License 2.0", "Copyright (c) 2010-2025 JetBrains s.r.o.\nhttps://github.com/Kotlin/kotlinx.coroutines")
+                        )
+
+                        licenses.forEach { (name, lic, note) ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(name, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                                    Text(lic, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(note, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Licensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showLicensesDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
+
+        if (showLegalDialog) {
+            AlertDialog(
+                onDismissRequest = { showLegalDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Gavel, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Legal Disclaimers")
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = "Third-Party Trademarks & Fair Use",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Microsoft, Microsoft Word, Microsoft Excel, Microsoft PowerPoint, and Microsoft Office are registered trademarks of Microsoft Corporation. Adobe and Adobe PDF are registered trademarks of Adobe Systems Inc. WPS Office is a trademark of Kingsoft Corporation. All product names, logos, and brands mentioned are property of their respective owners and are used strictly for compatibility and file-format identification purposes under nominative fair use. DocLite is an independent application and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation, Adobe Inc., or Kingsoft Corporation.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "Financial & Statement Analytics Notice",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "DocLite is an offline file reader utility and is not an Account Aggregator, bank, registered financial advisor, or credit reporting entity. All bank statement parsing, transaction calculations, and party categorizations are computed 100% locally on your device for personal informational purposes only. Do not rely on DocLite for official tax, accounting, or legal filings. Always verify transaction records against your official bank statements.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showLegalDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
     }
 }
-

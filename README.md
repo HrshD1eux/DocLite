@@ -11,7 +11,7 @@
 [![Minimum API](https://img.shields.io/badge/Min%20API-24%20(Android%207.0)-brightgreen.svg)](https://developer.android.com)
 [![Target API](https://img.shields.io/badge/Target%20API-36%20(Android%2016)-blue.svg)](https://developer.android.com)
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20Offline-success.svg)](#privacy--security)
-[![License: GPL-2.0-NC](https://img.shields.io/badge/License-GPL--2.0--NC-orange.svg)](LICENSE)
+[![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-orange.svg)](LICENSE)
 [![Download Latest APK](https://img.shields.io/badge/Download-Latest%20APK-purple.svg)](https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk)
 
 <p>
@@ -103,11 +103,16 @@ Analyze financial statements on your phone with zero data leaving your device:
 
 ---
 
-## ⚖️ License
+## ⚖️ License & Legal Disclaimers
 
-This project is licensed under the **GNU General Public License v2.0 (Non-Commercial)**.
-
-### Summary of License Terms:
-* **Personal & Educational Use**: You are free to view, study, modify, and run DocLite for personal, educational, and non-commercial open-source purposes.
+### License
+This project is licensed under the **DocLite Source Code License (Non-Commercial Version 1.0)**.
+* **Personal & Educational Use**: You are free to view, study, modify, and run DocLite for personal, educational, and non-commercial purposes.
 * **Commercial Use Prohibited**: You may **NOT** use, sell, distribute, or bundle this software, its source code, compiled binaries, or derivatives for any commercial purpose, paid distribution, subscription service, or ad-monetized application without explicit, prior written permission from the copyright holder.
 * **Full Terms**: Refer to the [LICENSE](LICENSE) file in this repository for complete legal conditions.
+
+### Third-Party Trademarks & Fair Use
+Microsoft, Microsoft Word, Microsoft Excel, Microsoft PowerPoint, and Microsoft Office are registered trademarks of Microsoft Corporation. Adobe and Adobe PDF are registered trademarks of Adobe Systems Inc. WPS Office is a trademark of Kingsoft Corporation. All product names, logos, and brands mentioned are property of their respective owners and are used strictly for identification and compatibility purposes. DocLite is an independent application and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation, Adobe Inc., or Kingsoft Corporation.
+
+### Financial Utility Disclaimer
+DocLite is an offline file viewing utility. It is not an Account Aggregator, bank, registered investment adviser, or financial institution. All bank statement parsing, calculation, and party categorization are performed 100% locally on your device for personal informational purposes only. Do not rely on DocLite for accounting, tax, or legal filings. Always verify details with official bank statements.
