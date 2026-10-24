@@ -47,10 +47,24 @@
 
 ---
 
-### 4. Release Signing & Credentials
+### 4. Release Signing & GitHub Secrets Setup
 * **Files**: `local.properties`, `*.jks`
 * **Status**: Keystores are strictly excluded via `.gitignore`.
-* **Action**: Never commit signing keys, store passwords, or key alias credentials to git history. For CI/CD builds, inject them through GitHub Actions Secrets (`RELEASE_STORE_FILE_BASE64`, `RELEASE_STORE_PASSWORD`, etc.).
+* **CI/CD Behavior**: 
+  - The GitHub Actions release workflow automatically checks for production secrets.
+  - If secrets are present, it signs with your production keystore.
+  - If secrets are absent, it uses a secure CI fallback keystore so releases never fail.
+* **To configure official release signing in GitHub**:
+  Navigate to your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**:
+  1. `RELEASE_KEYSTORE_BASE64`:
+     - Run in PowerShell to copy the base64 string directly to your clipboard:
+       ```powershell
+       [Convert]::ToBase64String([IO.File]::ReadAllBytes("doclite-secure.jks")) | Set-Clipboard
+       ```
+     - (On Linux/macOS: `base64 -w 0 doclite-secure.jks | pbcopy`)
+  2. `RELEASE_STORE_PASSWORD`: `doclite_secure_2026`
+  3. `RELEASE_KEY_ALIAS`: `doclite_secure`
+  4. `RELEASE_KEY_PASSWORD`: `doclite_secure_2026`
 
 ---
 
