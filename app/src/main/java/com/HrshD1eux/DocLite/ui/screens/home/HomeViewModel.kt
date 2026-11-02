@@ -62,7 +62,7 @@ class HomeViewModel(
                 file.name.contains(query, ignoreCase = true)
             }
         } else {
-            recents.ifEmpty { allDocs }
+            recents
         }
 
         HomeUiState.Success(
@@ -79,7 +79,13 @@ class HomeViewModel(
         initialValue = HomeUiState.Loading
     )
 
-    fun refreshScan() {
+        fun clearRecentFiles() {
+        viewModelScope.launch {
+            fileRepository.clearRecentFiles()
+        }
+    }
+
+fun refreshScan() {
         fileRepository.refreshScan()
     }
 

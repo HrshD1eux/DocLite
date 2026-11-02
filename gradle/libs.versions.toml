@@ -69,6 +69,7 @@ roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "robora
 
 poi = { group = "org.apache.poi", name = "poi", version.ref = "poi" }
 poi-ooxml = { group = "org.apache.poi", name = "poi-ooxml", version.ref = "poi" }
+poi-scratchpad = { group = "org.apache.poi", name = "poi-scratchpad", version.ref = "poi" }
 stax-api = { group = "javax.xml.stream", name = "stax-api", version.ref = "staxApi" }
 aalto-xml = { group = "com.fasterxml", name = "aalto-xml", version.ref = "aaltoXml" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }

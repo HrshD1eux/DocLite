@@ -15,6 +15,9 @@ import com.HrshD1eux.DocLite.models.TextRun
 import com.HrshD1eux.DocLite.models.TextStyle
 import com.HrshD1eux.DocLite.models.WordBodyElement
 import com.HrshD1eux.DocLite.models.WordDocument
+import com.HrshD1eux.DocLite.ui.screens.home.HomeViewModel
+import com.HrshD1eux.DocLite.ui.screens.home.HomeUiState
+import com.HrshD1eux.DocLite.repository.SettingsRepository
 import com.HrshD1eux.DocLite.office.excel.ExcelEngine
 import com.HrshD1eux.DocLite.office.pdf.PdfEngine
 import com.HrshD1eux.DocLite.office.powerpoint.PowerPointEngine
@@ -31,6 +34,7 @@ import com.HrshD1eux.DocLite.ui.screens.excel.ExcelUiState
 import com.HrshD1eux.DocLite.ui.screens.word.WordViewModel
 import com.HrshD1eux.DocLite.ui.screens.word.WordUiState
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.launch
 import org.apache.poi.xslf.usermodel.XMLSlideShow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -768,6 +772,116 @@ class OfficeEngineIntegrationTest {
         assertTrue("Full text must contain second page content", fullText.contains("Second Page Body Content"))
 
         // Cleanup
+        testFile.delete()
+    }
+
+    @Test
+    fun homeViewModel_clearRecentFiles_emptiesRecentsAndFilteredList() = runTest {
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val fileRepo = FileRepository(
+            context = context,
+            recentFileDao = db.recentFileDao(),
+            favoriteFileDao = db.favoriteFileDao(),
+            passwordProtectionDao = db.passwordProtectionDao(),
+            trashedFileDao = db.trashedFileDao()
+        )
+        val settingsRepo = SettingsRepository(context)
+
+        // Record a recent file
+        val dummyFile = DocumentFile(
+            id = "file:///dummy/RecentDocument.docx",
+            name = "RecentDocument.docx",
+            path = "/dummy/RecentDocument.docx",
+            uriString = "file:///dummy/RecentDocument.docx",
+            sizeBytes = 2048,
+            lastModified = System.currentTimeMillis(),
+            format = DocumentFormat.WORD
+        )
+        fileRepo.recordRecentFile(dummyFile)
+
+        val vm = HomeViewModel(fileRepo, settingsRepo)
+        val collectJob = backgroundScope.launch(kotlinx.coroutines.Dispatchers.Unconfined) {
+            vm.uiState.collect {}
+        }
+
+        var attempts = 0
+        while ((vm.uiState.value as? HomeUiState.Success)?.recentFiles?.isEmpty() != false && attempts < 50) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(20)
+            attempts++
+        }
+
+        val initialState = vm.uiState.value as HomeUiState.Success
+        assertEquals(1, initialState.recentFiles.size)
+        assertEquals(1, initialState.filteredFiles.size)
+
+        // Clear recents via HomeViewModel
+        vm.clearRecentFiles()
+
+        attempts = 0
+        while ((vm.uiState.value as? HomeUiState.Success)?.recentFiles?.isNotEmpty() != false && attempts < 50) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(20)
+            attempts++
+        }
+
+        val clearedState = vm.uiState.value as HomeUiState.Success
+        assertTrue("recentFiles must be empty after clear", clearedState.recentFiles.isEmpty())
+        assertTrue("filteredFiles must be empty when recents are cleared without category filter", clearedState.filteredFiles.isEmpty())
+
+        collectJob.cancel()
+        db.close()
+    }
+
+    @Test
+    fun wordEngine_loadLegacyDocFormat_succeedsWithoutException() = runTest {
+        val testDoc = File(context.filesDir, "legacy_sample.doc")
+        // Write standard OLE2 header followed by ASCII test text
+        testDoc.outputStream().use { out ->
+            out.write(byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11.toByte(), 0xE0.toByte(), 0xA1.toByte(), 0xB1.toByte(), 0x1A.toByte(), 0xE1.toByte()))
+            out.write("This is a legacy Word 97-2003 binary document content for DocLite testing.".toByteArray(Charsets.US_ASCII))
+        }
+
+        val loaded = wordEngine.loadDocument(Uri.fromFile(testDoc))
+        assertNotNull("Loaded legacy doc must not be null", loaded)
+        assertTrue("Must extract paragraph text from legacy doc", loaded.paragraphs.isNotEmpty())
+        val fullText = loaded.paragraphs.joinToString(" ") { it.getPlainText() }
+        assertTrue("Extracted text must contain content", fullText.contains("legacy Word 97-2003"))
+
+        testDoc.delete()
+    }
+
+    @Test
+    fun wordEngine_loadDocxWithXmlSyntaxIssue_fallsBackToRegexRecovery() = runTest {
+        val testFile = File(context.filesDir, "syntax_issue.docx")
+        // Create a zip with word/document.xml having unconventional attributes and self-closing tags
+        val unconventionalXml = """<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p w14:paraId="12345678">
+      <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>Heading from Resilient Parser</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>Paragraph content recovered cleanly without XMLBeans.</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>"""
+
+        java.util.zip.ZipOutputStream(testFile.outputStream()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+            zip.write(unconventionalXml.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+
+        val loaded = wordEngine.loadDocument(Uri.fromFile(testFile))
+        assertNotNull("Document must load via resilient parser", loaded)
+        val fullText = loaded.paragraphs.joinToString(" ") { it.getPlainText() }
+        assertTrue("Must contain heading text", fullText.contains("Heading from Resilient Parser"))
+        assertTrue("Must contain body text", fullText.contains("Paragraph content recovered cleanly"))
+
         testFile.delete()
     }
 }

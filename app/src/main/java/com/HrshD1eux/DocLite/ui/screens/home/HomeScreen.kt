@@ -638,6 +638,18 @@ fun HomeScreen(
                                         )
                                     )
                                 }
+                            } else if (uiState.recentFiles.isNotEmpty()) {
+                                TextButton(onClick = {
+                                    viewModel.clearRecentFiles()
+                                }) {
+                                    Text(
+                                        text = "Clear recent",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -661,13 +673,21 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "No documents found",
+                                        text = when {
+                                            uiState.selectedCategory != null -> "No ${uiState.selectedCategory.displayName} documents"
+                                            uiState.searchQuery.isNotBlank() -> "No matching documents"
+                                            else -> "No recent documents"
+                                        },
                                         style = MaterialTheme.typography.titleMedium,
                                         color = Color(0xFF191C1D)
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Tap + to create a new document or open from storage.",
+                                        text = when {
+                                            uiState.selectedCategory != null -> "No ${uiState.selectedCategory.displayName} files found on device."
+                                            uiState.searchQuery.isNotBlank() -> "Try searching for a different keyword."
+                                            else -> "Documents you open or create will appear here."
+                                        },
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = Color(0xFF70787C)
                                     )
