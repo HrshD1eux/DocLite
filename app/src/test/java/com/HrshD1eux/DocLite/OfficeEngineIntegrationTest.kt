@@ -884,4 +884,48 @@ class OfficeEngineIntegrationTest {
 
         testFile.delete()
     }
+
+    @Test
+    fun wordViewModel_withSettingsRepo_loadsWithoutHanging() = runTest {
+        val testDoc = File(context.filesDir, "vm_load_test.docx")
+        if (testDoc.exists()) testDoc.delete()
+        val uri = Uri.fromFile(testDoc)
+        val initialDoc = WordDocument(
+            title = "VM Load Test",
+            fileUri = uri.toString(),
+            bodyElements = listOf(
+                WordBodyElement.ParagraphElement(
+                    Paragraph(runs = listOf(TextRun("Instant Load Verification")))
+                )
+            )
+        )
+        wordEngine.saveDocument(uri, initialDoc)
+
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .openHelperFactory(FrameworkSQLiteOpenHelperFactory())
+            .build()
+        val docRepo = DocumentRepository(context, db.pdfAnnotationDao())
+        val fileRepo = FileRepository(context, db.recentFileDao(), db.favoriteFileDao(), db.passwordProtectionDao())
+        val settingsRepo = SettingsRepository(context)
+
+        val viewModel = WordViewModel(docRepo, fileRepo, settingsRepo)
+        viewModel.loadDocument(uri)
+        viewModel.loadDocument(uri)
+
+        var attempts = 0
+        while (viewModel.uiState.value !is WordUiState.Success && attempts < 50) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(30)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            attempts++
+        }
+
+        assertTrue("ViewModel state must become Success and not hang on loading", viewModel.uiState.value is WordUiState.Success)
+        val success = viewModel.uiState.value as WordUiState.Success
+        assertEquals("Instant Load Verification", success.document.paragraphs[0].getPlainText().trim())
+
+        testDoc.delete()
+        db.close()
+    }
 }

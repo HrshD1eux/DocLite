@@ -638,18 +638,6 @@ fun HomeScreen(
                                         )
                                     )
                                 }
-                            } else if (uiState.recentFiles.isNotEmpty()) {
-                                TextButton(onClick = {
-                                    viewModel.clearRecentFiles()
-                                }) {
-                                    Text(
-                                        text = "Clear recent",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    )
-                                }
                             }
                         }
                     }

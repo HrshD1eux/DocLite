@@ -14,6 +14,7 @@ import com.HrshD1eux.DocLite.models.WordTableCell
 import com.HrshD1eux.DocLite.models.WordTableRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.apache.poi.openxml4j.opc.OPCPackage
 import org.apache.poi.openxml4j.opc.PackageAccess
 import org.apache.poi.xwpf.usermodel.IBodyElement
@@ -138,60 +139,62 @@ class WordEngine(private val context: Context) {
     }
 
     suspend fun loadDocument(uri: Uri): WordDocument = withContext(Dispatchers.IO) {
-        val fileName = getFileName(uri)
-        val ext = fileName.substringAfterLast('.', "").lowercase()
+        withTimeout(15_000L) {
+            val fileName = getFileName(uri)
+            val ext = fileName.substringAfterLast('.', "").lowercase()
 
-        val tempFile = File.createTempFile("docx_cache_", ".tmp", context.cacheDir)
-        try {
-            val stream = openInputStreamRobust(uri)
-                ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
-            stream.use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
+            val tempFile = File.createTempFile("docx_cache_", ".tmp", context.cacheDir)
+            try {
+                val stream = openInputStreamRobust(uri)
+                    ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
+                stream.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
                 }
-            }
 
-            if (!tempFile.exists() || tempFile.length() == 0L) {
-                throw IllegalArgumentException("The Word document is empty or could not be read from storage.")
-            }
-
-            // Check if binary .doc format (Word 97-2003 OLE2)
-            val isLegacyDoc = ext == "doc" || isOle2File(tempFile)
-            if (isLegacyDoc) {
-                return@withContext parseDocLegacy(tempFile, fileName, uri.toString())
-            }
-
-            // Attempt 1: High-speed, robust Native OpenXML streaming parser with internal fallback
-            try {
-                return@withContext parseDocxNativeXml(tempFile, fileName, uri.toString())
-            } catch (t: Throwable) {
-                Log.w(TAG, "Native OpenXML parser failed for $fileName (${t.message}). Attempting fallback extraction.", t)
-            }
-
-            // Attempt 2: Direct raw XML extraction from zip archive with regex recovery
-            try {
-                return@withContext extractAndParseDocxFallback(tempFile, fileName, uri.toString())
-            } catch (t: Throwable) {
-                Log.w(TAG, "Zip fallback parser failed for $fileName (${t.message}). Attempting POI fallback.", t)
-            }
-
-            // Attempt 3: Apache POI fallback with configured context ClassLoader
-            val originalClassLoader = Thread.currentThread().contextClassLoader
-            try {
-                Thread.currentThread().contextClassLoader = WordEngine::class.java.classLoader
-                val doc = loadViaPoi(tempFile, fileName, uri)
-                if (doc != null) {
-                    return@withContext doc
+                if (!tempFile.exists() || tempFile.length() == 0L) {
+                    throw IllegalArgumentException("The Word document is empty or could not be read from storage.")
                 }
-            } catch (t: Throwable) {
-                Log.e(TAG, "Apache POI also failed to load $fileName (${t.message})", t)
+
+                // Check if binary .doc format (Word 97-2003 OLE2)
+                val isLegacyDoc = ext == "doc" || isOle2File(tempFile)
+                if (isLegacyDoc) {
+                    return@withTimeout parseDocLegacy(tempFile, fileName, uri.toString())
+                }
+
+                // Attempt 1: High-speed, robust Native OpenXML streaming parser with internal fallback
+                try {
+                    return@withTimeout parseDocxNativeXml(tempFile, fileName, uri.toString())
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Native OpenXML parser failed for $fileName (${t.message}). Attempting fallback extraction.", t)
+                }
+
+                // Attempt 2: Direct raw XML extraction from zip archive with non-regex recovery
+                try {
+                    return@withTimeout extractAndParseDocxFallback(tempFile, fileName, uri.toString())
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Zip fallback parser failed for $fileName (${t.message}). Attempting POI fallback.", t)
+                }
+
+                // Attempt 3: Apache POI fallback with configured context ClassLoader
+                val originalClassLoader = Thread.currentThread().contextClassLoader
+                try {
+                    Thread.currentThread().contextClassLoader = WordEngine::class.java.classLoader
+                    val doc = loadViaPoi(tempFile, fileName, uri)
+                    if (doc != null) {
+                        return@withTimeout doc
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Apache POI also failed to load $fileName (${t.message})", t)
+                } finally {
+                    Thread.currentThread().contextClassLoader = originalClassLoader
+                }
+
+                throw IllegalArgumentException("Unsupported or corrupted Word document format. Unable to parse $fileName.")
             } finally {
-                Thread.currentThread().contextClassLoader = originalClassLoader
+                tempFile.delete()
             }
-
-            throw IllegalArgumentException("Unsupported or corrupted Word document format. Unable to parse $fileName.")
-        } finally {
-            tempFile.delete()
         }
     }
 
@@ -379,8 +382,8 @@ class WordEngine(private val context: Context) {
             try {
                 return parseDocXmlWithPullParser(zipFile, docXmlContent, fileName, uriString)
             } catch (t: Throwable) {
-                Log.w(TAG, "XmlPullParser encountered an issue on $fileName (${t.message}), using regex fallback", t)
-                return parseDocxFallbackRegex(docXmlContent, fileName, uriString)
+                Log.w(TAG, "XmlPullParser encountered an issue on $fileName (${t.message}), using fallback parser", t)
+                return parseDocxFallbackParser(docXmlContent, fileName, uriString)
             }
         } finally {
             try { zipFile?.close() } catch (ignored: Throwable) {}
@@ -393,7 +396,7 @@ class WordEngine(private val context: Context) {
         fileName: String,
         uriString: String
     ): WordDocument {
-        val sectPrXml = Regex("<w:sectPr[\\s\\S]*?</w:sectPr>|<w:sectPr[^>]*/>").find(docXmlContent)?.value
+        val sectPrXml = extractSectPrXml(docXmlContent)
 
         // Parse relationships to map rId -> media path
         val imageRelsMap = mutableMapOf<String, String>()
@@ -682,7 +685,9 @@ class WordEngine(private val context: Context) {
                             val isDrawing = tag == "drawing"
                             var blipId: String? = null
                             var depth = 1
-                            while (depth > 0 && parser.next() != XmlPullParser.END_DOCUMENT) {
+                            var loopCount = 0
+                            while (depth > 0 && loopCount < 500 && parser.next() != XmlPullParser.END_DOCUMENT) {
+                                loopCount++
                                 if (parser.eventType == XmlPullParser.START_TAG) {
                                     if (!parser.isEmptyElementTag) depth++
                                     val innerTag = parser.name?.substringAfterLast(':') ?: ""
@@ -701,11 +706,7 @@ class WordEngine(private val context: Context) {
                             }
 
                             if (blipId != null && rIdToCachedUri.containsKey(blipId)) {
-                                val rawXml = if (isDrawing) {
-                                    Regex("<w:drawing[\\s\\S]*?r:embed=\"${Regex.escape(blipId)}\"[\\s\\S]*?</w:drawing>").find(docXmlContent)?.value
-                                } else {
-                                    Regex("<w:pict[\\s\\S]*?r:id=\"${Regex.escape(blipId)}\"[\\s\\S]*?</w:pict>").find(docXmlContent)?.value
-                                }
+                                val rawXml = extractDrawingXml(docXmlContent, blipId, isDrawing)
                                 val cachedUri = rIdToCachedUri[blipId]!!
                                 bodyElements.add(
                                     WordBodyElement.ImageElement(
@@ -815,7 +816,7 @@ class WordEngine(private val context: Context) {
                 val normName = entry.name.replace('\\', '/').trimStart('/')
                 if (normName.contains("document", ignoreCase = true) && normName.endsWith(".xml", ignoreCase = true)) {
                     val xmlContent = zis.bufferedReader(Charsets.UTF_8).readText().removePrefix("\uFEFF").trimStart()
-                    return parseDocxFallbackRegex(xmlContent, fileName, uriString)
+                    return parseDocxFallbackParser(xmlContent, fileName, uriString)
                 }
                 entry = zis.nextEntry
             }
@@ -823,97 +824,129 @@ class WordEngine(private val context: Context) {
         throw IllegalArgumentException("No document XML found in archive $fileName")
     }
 
-    private fun parseDocxFallbackRegex(docXmlContent: String, fileName: String, uriString: String): WordDocument {
+    private fun parseDocxFallbackParser(docXmlContent: String, fileName: String, uriString: String): WordDocument {
         val bodyElements = mutableListOf<WordBodyElement>()
         var totalWords = 0
         var totalChars = 0
 
-        val sectPrXml = Regex("<w:sectPr[\\s\\S]*?</w:sectPr>|<w:sectPr[^>]*/>").find(docXmlContent)?.value
+        val sectPrXml = extractSectPrXml(docXmlContent)
 
-        val pRegex = Regex("<w:p[ >][\\s\\S]*?</w:p>")
-        val tRegex = Regex("<w:t[^>]*>([\\s\\S]*?)</w:t>")
-        val rRegex = Regex("<w:r[ >][\\s\\S]*?</w:r>")
-        val bRegex = Regex("<w:b[ />]")
-        val iRegex = Regex("<w:i[ />]")
-        val uRegex = Regex("<w:u[ />]")
-        val szRegex = Regex("<w:sz\\s+[^>]*w:val=\"(\\d+)\"")
-        val colorRegex = Regex("<w:color\\s+[^>]*w:val=\"([A-Fa-f0-9]{6})\"")
-        val headingRegex = Regex("<w:pStyle\\s+[^>]*w:val=\"(?:heading|Heading|Title)(\\d?)\"")
-        val jcRegex = Regex("<w:jc\\s+[^>]*w:val=\"(\\w+)\"")
+        try {
+            val factory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = false }
+            val parser = factory.newPullParser()
+            parser.setInput(StringReader(docXmlContent))
 
-        val pMatches = pRegex.findAll(docXmlContent).toList()
-        for (pMatch in pMatches) {
-            val pXml = pMatch.value
-            val runs = mutableListOf<TextRun>()
+            var event = parser.eventType
+            var insideP = false
+            var insideR = false
+            var insideT = false
+            var isBold = false
+            var isItalic = false
+            var isUnderline = false
+            var fontSize = 16f
+            var fontColor = "#1C1B1F"
+            val currentRuns = mutableListOf<TextRun>()
+            var alignment = TextAlignment.LEFT
+            var isHeading = false
+            var headingLvl = 0
 
-            val isHeading = headingRegex.containsMatchIn(pXml)
-            val headingLvl = headingRegex.find(pXml)?.groupValues?.get(1)?.toIntOrNull() ?: if (isHeading) 1 else 0
-
-            val jcVal = jcRegex.find(pXml)?.groupValues?.get(1)?.lowercase()
-            val alignment = when (jcVal) {
-                "center" -> TextAlignment.CENTER
-                "right" -> TextAlignment.RIGHT
-                "both" -> TextAlignment.JUSTIFY
-                else -> TextAlignment.LEFT
-            }
-
-            val rMatches = rRegex.findAll(pXml).toList()
-            if (rMatches.isNotEmpty()) {
-                for (rMatch in rMatches) {
-                    val rXml = rMatch.value
-                    val isBold = bRegex.containsMatchIn(rXml) || (isHeading && headingLvl > 0)
-                    val isItalic = iRegex.containsMatchIn(rXml)
-                    val isUnderline = uRegex.containsMatchIn(rXml)
-                    val szVal = szRegex.find(rXml)?.groupValues?.get(1)?.toFloatOrNull()
-                    val fontSize = if (szVal != null && szVal > 0) szVal / 2f else if (isHeading) 20f else 16f
-                    val colorVal = colorRegex.find(rXml)?.groupValues?.get(1)
-                    val fontColor = if (colorVal != null) "#$colorVal" else "#1C1B1F"
-
-                    val tMatches = tRegex.findAll(rXml)
-                    for (tMatch in tMatches) {
-                        val rawText = unescapeXml(tMatch.groupValues[1])
-                        if (rawText.isNotEmpty()) {
-                            runs.add(
-                                TextRun(
-                                    text = rawText,
-                                    style = TextStyle(
-                                        isBold = isBold,
-                                        isItalic = isItalic,
-                                        isUnderline = isUnderline,
-                                        fontSizeSp = fontSize,
-                                        fontColorHex = fontColor
+            while (event != XmlPullParser.END_DOCUMENT) {
+                when (event) {
+                    XmlPullParser.START_TAG -> {
+                        val name = parser.name?.substringAfterLast(':') ?: ""
+                        when (name) {
+                            "p" -> {
+                                insideP = true
+                                currentRuns.clear()
+                                alignment = TextAlignment.LEFT
+                                isHeading = false
+                                headingLvl = 0
+                            }
+                            "jc" -> {
+                                val v = getValAttr(parser)?.lowercase()
+                                alignment = when (v) {
+                                    "center" -> TextAlignment.CENTER
+                                    "right" -> TextAlignment.RIGHT
+                                    "both" -> TextAlignment.JUSTIFY
+                                    else -> TextAlignment.LEFT
+                                }
+                            }
+                            "pStyle" -> {
+                                val v = getValAttr(parser)?.lowercase() ?: ""
+                                if (v.contains("heading") || v.contains("title")) {
+                                    isHeading = true
+                                    headingLvl = v.filter { it.isDigit() }.toIntOrNull() ?: 1
+                                }
+                            }
+                            "r" -> {
+                                insideR = true
+                                isBold = isHeading
+                                isItalic = false
+                                isUnderline = false
+                                fontSize = if (isHeading) 20f else 16f
+                                fontColor = "#1C1B1F"
+                            }
+                            "b" -> isBold = true
+                            "i" -> isItalic = true
+                            "u" -> isUnderline = true
+                            "sz" -> {
+                                val szVal = getValAttr(parser)?.toFloatOrNull()
+                                if (szVal != null && szVal > 0) fontSize = szVal / 2f
+                            }
+                            "color" -> {
+                                val c = getValAttr(parser)
+                                if (c != null && c != "auto") fontColor = if (c.startsWith("#")) c else "#$c"
+                            }
+                            "t" -> insideT = true
+                        }
+                    }
+                    XmlPullParser.TEXT -> {
+                        if (insideP && insideR && insideT) {
+                            val txt = parser.text ?: ""
+                            if (txt.isNotEmpty()) {
+                                currentRuns.add(
+                                    TextRun(
+                                        text = txt,
+                                        style = TextStyle(
+                                            isBold = isBold,
+                                            isItalic = isItalic,
+                                            isUnderline = isUnderline,
+                                            fontSizeSp = fontSize,
+                                            fontColorHex = fontColor
+                                        )
                                     )
                                 )
-                            )
-                            totalChars += rawText.length
-                            totalWords += rawText.split("\\s+".toRegex()).count { it.isNotBlank() }
+                                totalChars += txt.length
+                                totalWords += txt.split("\\s+".toRegex()).count { it.isNotBlank() }
+                            }
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        val name = parser.name?.substringAfterLast(':') ?: ""
+                        when (name) {
+                            "t" -> insideT = false
+                            "r" -> insideR = false
+                            "p" -> {
+                                insideP = false
+                                val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
+                                bodyElements.add(
+                                    WordBodyElement.ParagraphElement(
+                                        Paragraph(
+                                            runs = runs,
+                                            alignment = alignment,
+                                            isHeader = isHeading,
+                                            headerLevel = headingLvl
+                                        )
+                                    )
+                                )
+                            }
                         }
                     }
                 }
-            } else {
-                val tMatches = tRegex.findAll(pXml)
-                for (tMatch in tMatches) {
-                    val rawText = unescapeXml(tMatch.groupValues[1])
-                    if (rawText.isNotEmpty()) {
-                        runs.add(TextRun(text = rawText))
-                        totalChars += rawText.length
-                        totalWords += rawText.split("\\s+".toRegex()).count { it.isNotBlank() }
-                    }
-                }
+                event = parser.next()
             }
-
-            if (runs.isNotEmpty() || bodyElements.isEmpty()) {
-                bodyElements.add(
-                    WordBodyElement.ParagraphElement(
-                        Paragraph(
-                            runs = runs.ifEmpty { listOf(TextRun("")) },
-                            alignment = alignment,
-                            isHeader = isHeading,
-                            headerLevel = headingLvl
-                        )
-                    )
-                )
-            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Fallback XML pull parser failed, using raw text recovery", t)
         }
 
         val finalElements = bodyElements.ifEmpty {
@@ -928,6 +961,66 @@ class WordEngine(private val context: Context) {
             characterCount = totalChars,
             sectPrXml = sectPrXml
         )
+    }
+
+    private fun extractSectPrXml(docXml: String): String? {
+        val s1 = docXml.indexOf("<w:sectPr")
+        val s2 = docXml.indexOf("<sectPr")
+        val start = when {
+            s1 != -1 && s2 != -1 -> minOf(s1, s2)
+            s1 != -1 -> s1
+            else -> s2
+        }
+        if (start == -1) return null
+        val selfClose = docXml.indexOf("/>", start)
+        val endTag1 = docXml.indexOf("</w:sectPr>", start)
+        val endTag2 = docXml.indexOf("</sectPr>", start)
+        val fullEndTag = when {
+            endTag1 != -1 && endTag2 != -1 -> minOf(endTag1, endTag2)
+            endTag1 != -1 -> endTag1
+            else -> endTag2
+        }
+        if (selfClose != -1 && (fullEndTag == -1 || selfClose < fullEndTag)) {
+            return docXml.substring(start, selfClose + 2)
+        }
+        if (fullEndTag != -1) {
+            val closeLen = if (fullEndTag == endTag1) "</w:sectPr>".length else "</sectPr>".length
+            return docXml.substring(start, fullEndTag + closeLen)
+        }
+        return null
+    }
+
+    private fun extractDrawingXml(docXml: String, blipId: String, isDrawing: Boolean): String? {
+        val searchPattern = "=\"$blipId\""
+        var idx = docXml.indexOf(searchPattern)
+        while (idx != -1) {
+            val tagStart = if (isDrawing) {
+                val s1 = docXml.lastIndexOf("<w:drawing", idx)
+                val s2 = docXml.lastIndexOf("<drawing", idx)
+                maxOf(s1, s2)
+            } else {
+                val s1 = docXml.lastIndexOf("<w:pict", idx)
+                val s2 = docXml.lastIndexOf("<pict", idx)
+                maxOf(s1, s2)
+            }
+            if (tagStart != -1) {
+                val endTag = if (isDrawing) "</w:drawing>" else "</w:pict>"
+                val altEndTag = if (isDrawing) "</drawing>" else "</pict>"
+                val e1 = docXml.indexOf(endTag, idx)
+                val e2 = docXml.indexOf(altEndTag, idx)
+                val endIdx = when {
+                    e1 != -1 && e2 != -1 -> minOf(e1, e2)
+                    e1 != -1 -> e1
+                    else -> e2
+                }
+                if (endIdx != -1) {
+                    val closeLen = if (endIdx == e1) endTag.length else altEndTag.length
+                    return docXml.substring(tagStart, endIdx + closeLen)
+                }
+            }
+            idx = docXml.indexOf(searchPattern, idx + searchPattern.length)
+        }
+        return null
     }
 
     private fun unescapeXml(text: String): String {

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface WordUiState {
     data object Loading : WordUiState
@@ -62,12 +63,22 @@ class WordViewModel(
 
     private var undoDebounceJob: Job? = null
     private var pendingUndoSnapshot: List<WordBodyElement>? = null
+    private var currentLoadingJob: Job? = null
+    private var currentLoadingUri: Uri? = null
 
     fun loadDocument(uri: Uri) {
-        viewModelScope.launch {
+        if (currentLoadingUri == uri && _uiState.value is WordUiState.Success) {
+            return
+        }
+        currentLoadingJob?.cancel()
+        currentLoadingUri = uri
+
+        currentLoadingJob = viewModelScope.launch {
             _uiState.value = WordUiState.Loading
             val scaleFactor = try {
-                settingsRepository?.appSettingsFlow?.first()?.fontSizeMode?.scaleFactor ?: 1.0f
+                withTimeoutOrNull(250L) {
+                    settingsRepository?.appSettingsFlow?.first()
+                }?.fontSizeMode?.scaleFactor ?: 1.0f
             } catch (e: Exception) { 1.0f }
             val baseFontSizeSp = 16f * scaleFactor
 
@@ -90,17 +101,21 @@ class WordViewModel(
                     isBullet = firstPara?.bulletPrefix != null,
                     isEditing = isNewDoc
                 )
-                fileRepository.recordRecentFile(
-                    DocumentFile(
-                        id = uri.toString(),
-                        name = doc.title,
-                        path = uri.path ?: "",
-                        uriString = uri.toString(),
-                        sizeBytes = 1024,
-                        lastModified = System.currentTimeMillis(),
-                        format = DocumentFormat.WORD
+                try {
+                    fileRepository.recordRecentFile(
+                        DocumentFile(
+                            id = uri.toString(),
+                            name = doc.title,
+                            path = uri.path ?: "",
+                            uriString = uri.toString(),
+                            sizeBytes = 1024,
+                            lastModified = System.currentTimeMillis(),
+                            format = DocumentFormat.WORD
+                        )
                     )
-                )
+                } catch (t: Throwable) {
+                    // Ignored: recording recent file must not fail document opening
+                }
             }.onFailure { err ->
                 _uiState.value = WordUiState.Error(err.message ?: "Failed to open Word document")
             }
