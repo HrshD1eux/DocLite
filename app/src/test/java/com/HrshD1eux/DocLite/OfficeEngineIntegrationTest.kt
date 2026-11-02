@@ -1108,4 +1108,65 @@ class OfficeEngineIntegrationTest {
 
         testDoc.delete()
     }
+
+    @Test
+    fun pagination_and_column_weights_dsa_document() = runTest {
+        // 1. Test computeColumnWeights on an index table structure
+        val indexTable = WordTable(
+            id = "index_tbl",
+            rows = listOf(
+                WordTableRow(
+                    cells = listOf(
+                        WordTableCell("S.No.", isHeader = true),
+                        WordTableCell("Practical Title", isHeader = true),
+                        WordTableCell("Date", isHeader = true),
+                        WordTableCell("Page", isHeader = true)
+                    )
+                ),
+                WordTableRow(
+                    cells = listOf(
+                        WordTableCell("1"),
+                        WordTableCell("Traversing on a Linear Array"),
+                        WordTableCell("11/08/2026"),
+                        WordTableCell("3")
+                    )
+                )
+            )
+        )
+        val weights = com.HrshD1eux.DocLite.ui.screens.word.computeColumnWeights(indexTable)
+        assertEquals(4, weights.size)
+        assertEquals(0.85f, weights[0], 0.001f) // S.No. <= 5 chars -> 0.85f
+        assertEquals(3.5f, weights[1], 0.001f)  // Practical Title > 12 chars -> 3.5f
+        assertEquals(1.35f, weights[2], 0.001f) // Date <= 12 chars -> 1.35f
+        assertEquals(0.85f, weights[3], 0.001f) // Page <= 5 chars -> 0.85f
+
+        // 2. Test pagination does not generate phantom blank pages on PageBreakElement
+        val elements = mutableListOf<WordBodyElement>()
+        for (i in 1..5) {
+            elements.add(WordBodyElement.ParagraphElement(Paragraph(runs = listOf(TextRun("Page $i heading")))))
+            if (i < 5) {
+                elements.add(WordBodyElement.PageBreakElement(i))
+            }
+        }
+        val pages = com.HrshD1eux.DocLite.ui.screens.word.paginateDocumentElements(elements)
+        assertEquals(5, pages.size)
+        pages.forEachIndexed { idx, page ->
+            assertEquals(idx + 1, page.pageNumber)
+            assertEquals(1, page.elements.size)
+        }
+
+        // 3. If real DSA Practical File is available on local disk, verify real loading and layout
+        val file = File("C:/Users/Harsh/Downloads/DSA_Practical_File.docx")
+        if (file.exists()) {
+            val doc = wordEngine.loadDocument(Uri.fromFile(file))
+            assertNotNull(doc)
+            val images = doc.bodyElements.filterIsInstance<WordBodyElement.ImageElement>()
+            val tables = doc.bodyElements.filterIsInstance<WordBodyElement.TableElement>()
+            assertTrue("Document must contain at least 1 image", images.isNotEmpty())
+            assertTrue("Document must contain at least 1 table", tables.isNotEmpty())
+
+            val realPages = com.HrshD1eux.DocLite.ui.screens.word.paginateDocumentElements(doc.bodyElements)
+            assertTrue("DSA Practical File with 31k words and 20 page breaks must paginate sensibly into ~40 pages instead of 324 phantom pages, got ${realPages.size}", realPages.size in 38..45)
+        }
+    }
 }
