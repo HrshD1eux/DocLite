@@ -358,13 +358,13 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Security, contentDescription = "Privacy", tint = MaterialTheme.colorScheme.tertiary)
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("100% Offline & Private", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                            Text("Offline-First & Private", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = "DocLite processes all your documents and statements 100% locally on your device. Zero telemetry, zero cloud tracking, zero data collection. Internet permission is used solely when you manually check for app updates via GitHub.",
+                            text = "DocLite processes all your documents and statements locally on your device. Zero telemetry, zero cloud tracking, zero data collection. Internet permission is used solely when you manually check for app updates via GitHub.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -627,7 +627,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "DocLite is an offline file reader utility and is not an Account Aggregator, bank, registered financial advisor, or credit reporting entity. All bank statement parsing, transaction calculations, and party categorizations are computed 100% locally on your device for personal informational purposes only. Do not rely on DocLite for official tax, accounting, or legal filings. Always verify transaction records against your official bank statements.",
+                            text = "DocLite is an offline file reader utility and is not an Account Aggregator, bank, registered financial advisor, or credit reporting entity. All bank statement parsing, transaction calculations, and party categorizations are computed locally on your device for personal informational purposes only. Do not rely on DocLite for official tax, accounting, or legal filings. Always verify transaction records against your official bank statements.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

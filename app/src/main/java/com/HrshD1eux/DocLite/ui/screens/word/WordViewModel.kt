@@ -11,6 +11,9 @@ import com.HrshD1eux.DocLite.models.TextRun
 import com.HrshD1eux.DocLite.models.TextStyle
 import com.HrshD1eux.DocLite.models.WordBodyElement
 import com.HrshD1eux.DocLite.models.WordDocument
+import com.HrshD1eux.DocLite.models.WordTable
+import com.HrshD1eux.DocLite.models.WordTableCell
+import com.HrshD1eux.DocLite.models.WordTableRow
 import com.HrshD1eux.DocLite.repository.DocumentRepository
 import com.HrshD1eux.DocLite.repository.FileRepository
 import com.HrshD1eux.DocLite.repository.SettingsRepository
@@ -28,10 +31,14 @@ sealed interface WordUiState {
     data class Success(
         val document: WordDocument,
         val isEditing: Boolean = false,
+        val activeElementIndex: Int = 0,
         val currentAlignment: TextAlignment = TextAlignment.LEFT,
         val isBold: Boolean = false,
         val isItalic: Boolean = false,
         val isUnderline: Boolean = false,
+        val isHeader: Boolean = false,
+        val headerLevel: Int = 0,
+        val isBullet: Boolean = false,
         val fontSizeSp: Float = 16f,
         val fontColorHex: String = "#1C1B1F",
         val canUndo: Boolean = false,
@@ -53,9 +60,7 @@ class WordViewModel(
     private var undoStack = mutableListOf<List<WordBodyElement>>()
     private var redoStack = mutableListOf<List<WordBodyElement>>()
 
-    // Debounce job for coalescing undo snapshots
     private var undoDebounceJob: Job? = null
-    // Snapshot captured before the current burst of typing
     private var pendingUndoSnapshot: List<WordBodyElement>? = null
 
     fun loadDocument(uri: Uri) {
@@ -72,12 +77,19 @@ class WordViewModel(
                     doc.paragraphs.firstOrNull()?.getPlainText()?.contains("Welcome to your new DocLite document") == true ||
                     doc.paragraphs.firstOrNull()?.getPlainText()?.isBlank() == true
                 )
+                val firstPara = doc.paragraphs.firstOrNull()
                 _uiState.value = WordUiState.Success(
                     document = doc,
-                    fontSizeSp = baseFontSizeSp,
+                    fontSizeSp = firstPara?.runs?.firstOrNull()?.style?.fontSizeSp ?: baseFontSizeSp,
+                    currentAlignment = firstPara?.alignment ?: TextAlignment.LEFT,
+                    isBold = firstPara?.runs?.any { it.style.isBold } == true,
+                    isItalic = firstPara?.runs?.any { it.style.isItalic } == true,
+                    isUnderline = firstPara?.runs?.any { it.style.isUnderline } == true,
+                    isHeader = firstPara?.isHeader == true,
+                    headerLevel = firstPara?.headerLevel ?: 0,
+                    isBullet = firstPara?.bulletPrefix != null,
                     isEditing = isNewDoc
                 )
-                // Record in recent files
                 fileRepository.recordRecentFile(
                     DocumentFile(
                         id = uri.toString(),
@@ -100,16 +112,37 @@ class WordViewModel(
         _uiState.value = currentState.copy(isEditing = !currentState.isEditing)
     }
 
-    /**
-     * Updates the text of a paragraph at the given index within bodyElements.
-     * Preserves existing run styles for single-run paragraphs instead of
-     * replacing with global toolbar state.
-     */
+    fun setActiveElement(index: Int) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val elements = currentState.document.bodyElements
+        val clampedIndex = index.coerceIn(0, (elements.size - 1).coerceAtLeast(0))
+        val elem = elements.getOrNull(clampedIndex)
+
+        if (elem is WordBodyElement.ParagraphElement) {
+            val p = elem.paragraph
+            val run = p.runs.firstOrNull()
+            _uiState.value = currentState.copy(
+                activeElementIndex = clampedIndex,
+                currentAlignment = p.alignment,
+                isBold = p.runs.any { it.style.isBold },
+                isItalic = p.runs.any { it.style.isItalic },
+                isUnderline = p.runs.any { it.style.isUnderline },
+                isHeader = p.isHeader,
+                headerLevel = p.headerLevel,
+                isBullet = p.bulletPrefix != null,
+                fontSizeSp = run?.style?.fontSizeSp ?: 16f,
+                fontColorHex = run?.style?.fontColorHex ?: "#1C1B1F"
+            )
+        } else {
+            _uiState.value = currentState.copy(activeElementIndex = clampedIndex)
+        }
+    }
+
     fun updateParagraphText(paragraphIndex: Int, text: String) {
         val currentState = _uiState.value as? WordUiState.Success ?: return
         val currentElements = currentState.document.bodyElements
 
-        // Find the N-th paragraph element in bodyElements
+        // Map paragraphIndex to bodyElements index
         var paraCount = 0
         var bodyIndex = -1
         for (i in currentElements.indices) {
@@ -128,7 +161,6 @@ class WordViewModel(
         val oldText = p.getPlainText()
         if (oldText == text) return
 
-        // Capture undo snapshot with debouncing — only one snapshot per typing burst
         if (pendingUndoSnapshot == null) {
             pendingUndoSnapshot = currentElements.toList()
         }
@@ -141,20 +173,20 @@ class WordViewModel(
             }
         }
 
-        // Preserve existing run style for single-run paragraphs.
-        // Multi-run paragraphs collapse to one run but keep the first run's style.
         val existingRuns = p.runs
         val updatedRuns = if (existingRuns.size == 1) {
             listOf(existingRuns[0].copy(text = text))
+        } else if (existingRuns.isEmpty()) {
+            listOf(TextRun(text = text))
         } else {
-            listOf(TextRun(text = text, style = existingRuns.firstOrNull()?.style ?: TextStyle()))
+            // Preserve first run style for single-line paragraph edits
+            listOf(TextRun(text = text, style = existingRuns.first().style))
         }
 
         val updatedParagraph = p.copy(runs = updatedRuns)
         val updatedElements = currentElements.toMutableList()
         updatedElements[bodyIndex] = WordBodyElement.ParagraphElement(updatedParagraph)
 
-        // Update word/char counts
         val oldWords = if (oldText.isBlank()) 0 else oldText.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
         val newWords = if (text.isBlank()) 0 else text.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
         val wordDelta = newWords - oldWords
@@ -168,6 +200,7 @@ class WordViewModel(
 
         _uiState.value = currentState.copy(
             document = updatedDoc,
+            activeElementIndex = bodyIndex,
             canUndo = undoStack.isNotEmpty() || pendingUndoSnapshot != null,
             canRedo = redoStack.isNotEmpty()
         )
@@ -181,22 +214,18 @@ class WordViewModel(
         val updatedElements = currentState.document.bodyElements + newElement
         _uiState.value = currentState.copy(
             document = currentState.document.copy(bodyElements = updatedElements),
+            activeElementIndex = updatedElements.lastIndex,
             canUndo = undoStack.isNotEmpty()
         )
     }
 
-    /**
-     * Inserts a new empty paragraph at the given paragraph index position.
-     */
     fun insertParagraphAt(paragraphIndex: Int) {
         val currentState = _uiState.value as? WordUiState.Success ?: return
         commitUndoImmediate(currentState.document.bodyElements)
 
         val currentElements = currentState.document.bodyElements.toMutableList()
-
-        // Find the bodyElements index corresponding to this paragraph index
         var paraCount = 0
-        var insertAfterIndex = currentElements.size // default: append at end
+        var insertAfterIndex = currentElements.size
         for (i in currentElements.indices) {
             if (currentElements[i] is WordBodyElement.ParagraphElement) {
                 if (paraCount == paragraphIndex) {
@@ -212,22 +241,18 @@ class WordViewModel(
 
         _uiState.value = currentState.copy(
             document = currentState.document.copy(bodyElements = currentElements),
+            activeElementIndex = insertAfterIndex,
             canUndo = undoStack.isNotEmpty()
         )
     }
 
-    /**
-     * Deletes the paragraph at the given index. Prevents deleting the last paragraph.
-     */
     fun deleteParagraph(paragraphIndex: Int) {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-        if (currentState.document.paragraphs.size <= 1) return // Keep at least one paragraph
+        if (currentState.document.paragraphs.size <= 1) return
 
         commitUndoImmediate(currentState.document.bodyElements)
-
         val currentElements = currentState.document.bodyElements.toMutableList()
 
-        // Find the bodyElements index corresponding to this paragraph index
         var paraCount = 0
         var removeIndex = -1
         for (i in currentElements.indices) {
@@ -241,13 +266,13 @@ class WordViewModel(
         }
         if (removeIndex == -1) return
 
-        // Recalculate word/char counts for the removed paragraph
         val removedParagraph = (currentElements[removeIndex] as WordBodyElement.ParagraphElement).paragraph
         val removedText = removedParagraph.getPlainText()
         val removedWords = if (removedText.isBlank()) 0 else removedText.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
         val removedChars = removedText.length
 
         currentElements.removeAt(removeIndex)
+        val nextActive = removeIndex.coerceAtMost(currentElements.lastIndex)
 
         _uiState.value = currentState.copy(
             document = currentState.document.copy(
@@ -255,50 +280,260 @@ class WordViewModel(
                 wordCount = (currentState.document.wordCount - removedWords).coerceAtLeast(0),
                 characterCount = (currentState.document.characterCount - removedChars).coerceAtLeast(0)
             ),
+            activeElementIndex = nextActive,
             canUndo = undoStack.isNotEmpty()
         )
     }
 
-    fun setAlignment(alignment: TextAlignment) {
+    fun duplicateParagraph(index: Int = -1) {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-        _uiState.value = currentState.copy(currentAlignment = alignment)
+        val targetIndex = if (index >= 0) index else currentState.activeElementIndex
+        val elem = currentState.document.bodyElements.getOrNull(targetIndex) ?: return
+
+        commitUndoImmediate(currentState.document.bodyElements)
+        val currentElements = currentState.document.bodyElements.toMutableList()
+
+        val duplicated = when (elem) {
+            is WordBodyElement.ParagraphElement -> {
+                val p = elem.paragraph
+                WordBodyElement.ParagraphElement(
+                    p.copy(id = java.util.UUID.randomUUID().toString())
+                )
+            }
+            is WordBodyElement.TableElement -> {
+                WordBodyElement.TableElement(
+                    elem.table.copy(id = java.util.UUID.randomUUID().toString())
+                )
+            }
+            is WordBodyElement.ImageElement -> {
+                elem.copy(id = java.util.UUID.randomUUID().toString())
+            }
+        }
+
+        currentElements.add(targetIndex + 1, duplicated)
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = currentElements),
+            activeElementIndex = targetIndex + 1,
+            canUndo = undoStack.isNotEmpty()
+        )
     }
 
     fun toggleBold() {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-        _uiState.value = currentState.copy(isBold = !currentState.isBold)
+        val newBold = !currentState.isBold
+        applyFormattingToActiveParagraph { p ->
+            val updatedRuns = p.runs.map { run ->
+                run.copy(style = run.style.copy(isBold = newBold))
+            }
+            p.copy(runs = updatedRuns)
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(isBold = newBold) ?: state
+        }
     }
 
     fun toggleItalic() {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-        _uiState.value = currentState.copy(isItalic = !currentState.isItalic)
+        val newItalic = !currentState.isItalic
+        applyFormattingToActiveParagraph { p ->
+            val updatedRuns = p.runs.map { run ->
+                run.copy(style = run.style.copy(isItalic = newItalic))
+            }
+            p.copy(runs = updatedRuns)
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(isItalic = newItalic) ?: state
+        }
     }
 
     fun toggleUnderline() {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-        _uiState.value = currentState.copy(isUnderline = !currentState.isUnderline)
+        val newUnderline = !currentState.isUnderline
+        applyFormattingToActiveParagraph { p ->
+            val updatedRuns = p.runs.map { run ->
+                run.copy(style = run.style.copy(isUnderline = newUnderline))
+            }
+            p.copy(runs = updatedRuns)
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(isUnderline = newUnderline) ?: state
+        }
+    }
+
+    fun setAlignment(alignment: TextAlignment) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        applyFormattingToActiveParagraph { p ->
+            p.copy(alignment = alignment)
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(currentAlignment = alignment) ?: state
+        }
+    }
+
+    fun toggleHeading(level: Int = 1) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val isCurrentlyThisHeading = currentState.isHeader && currentState.headerLevel == level
+        val newHeader = !isCurrentlyThisHeading
+        val newLevel = if (newHeader) level else 0
+
+        applyFormattingToActiveParagraph { p ->
+            p.copy(
+                isHeader = newHeader,
+                headerLevel = newLevel
+            )
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(isHeader = newHeader, headerLevel = newLevel) ?: state
+        }
+    }
+
+    fun toggleBullet() {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val newBullet = !currentState.isBullet
+        applyFormattingToActiveParagraph { p ->
+            p.copy(bulletPrefix = if (newBullet) "• " else null)
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(isBullet = newBullet) ?: state
+        }
     }
 
     fun setFontSize(sp: Float) {
+        val clampedSp = sp.coerceIn(8f, 72f)
+        applyFormattingToActiveParagraph { p ->
+            val updatedRuns = p.runs.map { run ->
+                run.copy(style = run.style.copy(fontSizeSp = clampedSp))
+            }
+            p.copy(runs = updatedRuns)
+        }
+        _uiState.update { state ->
+            (state as? WordUiState.Success)?.copy(fontSizeSp = clampedSp) ?: state
+        }
+    }
+
+    fun insertTable(rows: Int = 3, cols: Int = 3, afterIndex: Int = -1) {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-        _uiState.value = currentState.copy(fontSizeSp = sp)
+        commitUndoImmediate(currentState.document.bodyElements)
+
+        val targetIndex = if (afterIndex >= 0) afterIndex else currentState.activeElementIndex
+        val currentElements = currentState.document.bodyElements.toMutableList()
+
+        val tableRows = (0 until rows).map { rIdx ->
+            val cells = (0 until cols).map { cIdx ->
+                WordTableCell(
+                    text = if (rIdx == 0) "Header ${cIdx + 1}" else "Cell ${rIdx},${cIdx + 1}",
+                    isHeader = rIdx == 0
+                )
+            }
+            WordTableRow(cells = cells)
+        }
+        val newTableElem = WordBodyElement.TableElement(WordTable(rows = tableRows))
+        val insertPos = (targetIndex + 1).coerceIn(0, currentElements.size)
+        currentElements.add(insertPos, newTableElem)
+
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = currentElements),
+            activeElementIndex = insertPos,
+            canUndo = undoStack.isNotEmpty()
+        )
+    }
+
+    fun updateTableCell(elementIndex: Int, rowIndex: Int, colIndex: Int, text: String) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val elem = currentState.document.bodyElements.getOrNull(elementIndex) as? WordBodyElement.TableElement ?: return
+        val table = elem.table
+
+        if (rowIndex !in table.rows.indices) return
+        val row = table.rows[rowIndex]
+        if (colIndex !in row.cells.indices) return
+
+        commitUndoImmediate(currentState.document.bodyElements)
+        val updatedCells = row.cells.toMutableList()
+        updatedCells[colIndex] = updatedCells[colIndex].copy(text = text)
+
+        val updatedRows = table.rows.toMutableList()
+        updatedRows[rowIndex] = row.copy(cells = updatedCells)
+
+        val updatedElements = currentState.document.bodyElements.toMutableList()
+        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows))
+
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = updatedElements),
+            canUndo = undoStack.isNotEmpty()
+        )
+    }
+
+    fun addTableRow(elementIndex: Int) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val elem = currentState.document.bodyElements.getOrNull(elementIndex) as? WordBodyElement.TableElement ?: return
+        val table = elem.table
+        val colCount = table.rows.firstOrNull()?.cells?.size ?: 2
+
+        commitUndoImmediate(currentState.document.bodyElements)
+        val newRow = WordTableRow(cells = (0 until colCount).map { WordTableCell(text = "") })
+        val updatedRows = table.rows + newRow
+
+        val updatedElements = currentState.document.bodyElements.toMutableList()
+        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows))
+
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = updatedElements),
+            canUndo = undoStack.isNotEmpty()
+        )
+    }
+
+    fun deleteTableRow(elementIndex: Int, rowIndex: Int) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val elem = currentState.document.bodyElements.getOrNull(elementIndex) as? WordBodyElement.TableElement ?: return
+        val table = elem.table
+        if (table.rows.size <= 1 || rowIndex !in table.rows.indices) return
+
+        commitUndoImmediate(currentState.document.bodyElements)
+        val updatedRows = table.rows.toMutableList().apply { removeAt(rowIndex) }
+
+        val updatedElements = currentState.document.bodyElements.toMutableList()
+        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows))
+
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = updatedElements),
+            canUndo = undoStack.isNotEmpty()
+        )
+    }
+
+    private fun applyFormattingToActiveParagraph(transform: (Paragraph) -> Paragraph) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val elements = currentState.document.bodyElements
+        val activeIdx = currentState.activeElementIndex
+
+        val elem = elements.getOrNull(activeIdx) as? WordBodyElement.ParagraphElement ?: return
+        commitUndoImmediate(elements)
+
+        val updatedParagraph = transform(elem.paragraph)
+        val updatedElements = elements.toMutableList()
+        updatedElements[activeIdx] = WordBodyElement.ParagraphElement(updatedParagraph)
+
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = updatedElements),
+            canUndo = undoStack.isNotEmpty()
+        )
     }
 
     fun undo() {
         val currentState = _uiState.value as? WordUiState.Success ?: return
-
-        // Flush any pending debounced snapshot first
         flushPendingUndo(currentState.document.bodyElements)
 
         if (undoStack.isNotEmpty()) {
             val previous = undoStack.removeAt(undoStack.lastIndex)
             redoStack.add(currentState.document.bodyElements)
 
+            val nextActive = currentState.activeElementIndex.coerceIn(0, (previous.size - 1).coerceAtLeast(0))
             _uiState.value = currentState.copy(
                 document = currentState.document.copy(bodyElements = previous),
+                activeElementIndex = nextActive,
                 canUndo = undoStack.isNotEmpty(),
                 canRedo = true
             )
+            setActiveElement(nextActive)
         }
     }
 
@@ -308,27 +543,26 @@ class WordViewModel(
             val next = redoStack.removeAt(redoStack.lastIndex)
             undoStack.add(currentState.document.bodyElements)
 
+            val nextActive = currentState.activeElementIndex.coerceIn(0, (next.size - 1).coerceAtLeast(0))
             _uiState.value = currentState.copy(
                 document = currentState.document.copy(bodyElements = next),
+                activeElementIndex = nextActive,
                 canUndo = true,
                 canRedo = redoStack.isNotEmpty()
             )
+            setActiveElement(nextActive)
         }
     }
 
-    /** Immediately commits an undo snapshot (for structural actions like add/delete paragraph). */
     private fun commitUndoImmediate(elements: List<WordBodyElement>) {
-        // Flush any pending debounced snapshot first
         flushPendingUndo(elements)
         commitUndo(elements)
     }
 
-    /** Flushes the pending debounced undo snapshot if one exists. */
     private fun flushPendingUndo(currentElements: List<WordBodyElement>) {
         undoDebounceJob?.cancel()
         undoDebounceJob = null
         pendingUndoSnapshot?.let { snapshot ->
-            // Only commit if the snapshot differs from current state
             if (snapshot !== currentElements) {
                 commitUndo(snapshot)
             }
@@ -337,7 +571,7 @@ class WordViewModel(
     }
 
     private fun commitUndo(elements: List<WordBodyElement>) {
-        if (undoStack.size >= 25) {
+        if (undoStack.size >= 50) {
             undoStack.removeAt(0)
         }
         undoStack.add(elements.toList())
@@ -351,7 +585,6 @@ class WordViewModel(
                 Uri.parse(currentState.document.fileUri),
                 currentState.document
             )
-            // Only update saveStatus — don't replace entire state to avoid overwriting concurrent edits
             _uiState.update { state ->
                 (state as? WordUiState.Success)?.copy(
                     saveStatus = if (result.isSuccess) "Document Saved!"
@@ -380,7 +613,6 @@ class WordViewModel(
                 )
                 val success = fileRepository.renameFile(targetFile, formattedName)
                 if (success) {
-                    // Safe to reconstruct URI for file:// scheme
                     val oldFile = java.io.File(uri.path!!)
                     val newFile = java.io.File(oldFile.parentFile, formattedName)
                     val newUri = Uri.fromFile(newFile).toString()
@@ -396,7 +628,6 @@ class WordViewModel(
                     }
                 }
             } else {
-                // For content:// URIs, filesystem rename is not possible — update display title only
                 _uiState.update { state ->
                     (state as? WordUiState.Success)?.copy(
                         document = currentState.document.copy(title = formattedName),

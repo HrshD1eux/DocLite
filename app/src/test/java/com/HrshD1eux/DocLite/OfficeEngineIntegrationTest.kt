@@ -28,6 +28,8 @@ import com.HrshD1eux.DocLite.repository.DocumentRepository
 import com.HrshD1eux.DocLite.repository.FileRepository
 import com.HrshD1eux.DocLite.ui.screens.excel.ExcelViewModel
 import com.HrshD1eux.DocLite.ui.screens.excel.ExcelUiState
+import com.HrshD1eux.DocLite.ui.screens.word.WordViewModel
+import com.HrshD1eux.DocLite.ui.screens.word.WordUiState
 import kotlinx.coroutines.test.runTest
 import org.apache.poi.xslf.usermodel.XMLSlideShow
 import org.junit.Assert.assertEquals
@@ -500,6 +502,154 @@ class OfficeEngineIntegrationTest {
         state = viewModel.uiState.value as ExcelUiState.Success
         assertEquals(1, state.document.sheets.size)
         assertEquals(0, state.activeSheetIndex)
+
+        db.close()
+    }
+
+    @Test
+    fun wordEngine_savePreservesExistingZipEntriesAndMedia() = runTest {
+        val testFile = File(context.cacheDir, "test_preserve_media.docx")
+        if (testFile.exists()) testFile.delete()
+
+        // 1. Manually craft a .docx containing word/document.xml, word/media/logo.png, and word/styles.xml
+        val docXml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Original Text</w:t></w:r></w:p>
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>
+  </w:body>
+</w:document>""".trimIndent()
+
+        val mockImageData = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03)
+        val mockStyles = "<w:styles><w:style w:styleId=\"CustomStyle\"/></w:styles>"
+
+        java.util.zip.ZipOutputStream(testFile.outputStream()).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("[Content_Types].xml"))
+            zos.write("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"/>".toByteArray())
+            zos.closeEntry()
+
+            zos.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+            zos.write(docXml.toByteArray())
+            zos.closeEntry()
+
+            zos.putNextEntry(java.util.zip.ZipEntry("word/media/logo.png"))
+            zos.write(mockImageData)
+            zos.closeEntry()
+
+            zos.putNextEntry(java.util.zip.ZipEntry("word/styles.xml"))
+            zos.write(mockStyles.toByteArray())
+            zos.closeEntry()
+        }
+
+        val uri = Uri.fromFile(testFile)
+
+        // 2. Load the document through WordEngine
+        val loaded = wordEngine.loadDocument(uri)
+        assertEquals(1, loaded.paragraphs.size)
+        assertEquals("Original Text", loaded.paragraphs[0].getPlainText())
+
+        // 3. Edit text and save
+        val editedParagraphs = listOf(
+            WordBodyElement.ParagraphElement(
+                Paragraph(runs = listOf(TextRun(text = "Updated Text Without Data Loss")))
+            )
+        )
+        val editedDoc = loaded.copy(bodyElements = editedParagraphs)
+        val saveSuccess = wordEngine.saveDocument(uri, editedDoc)
+        assertTrue("Save must succeed", saveSuccess)
+
+        // 4. Verify ZIP package preservation: media and styles MUST still exist and be intact!
+        val savedZip = java.util.zip.ZipFile(testFile)
+        savedZip.use { zip ->
+            val mediaEntry = zip.getEntry("word/media/logo.png")
+            assertNotNull("word/media/logo.png must be preserved in the archive", mediaEntry)
+            val readMedia = zip.getInputStream(mediaEntry).readBytes()
+            org.junit.Assert.assertArrayEquals("Image binary data must remain byte-for-byte identical", mockImageData, readMedia)
+
+            val stylesEntry = zip.getEntry("word/styles.xml")
+            assertNotNull("word/styles.xml must be preserved in the archive", stylesEntry)
+
+            val docEntry = zip.getEntry("word/document.xml")
+            assertNotNull("word/document.xml must exist", docEntry)
+            val docText = zip.getInputStream(docEntry).bufferedReader().readText()
+            assertTrue("word/document.xml must contain the updated text", docText.contains("Updated Text Without Data Loss"))
+        }
+    }
+
+    @Test
+    fun wordViewModel_activeParagraphFormattingAndTableOperations() = runTest {
+        val testFile = File(context.cacheDir, "test_vm_ops.docx")
+        if (testFile.exists()) testFile.delete()
+        val uri = Uri.fromFile(testFile)
+
+        val initialDoc = WordDocument(
+            title = "test_vm_ops.docx",
+            fileUri = uri.toString(),
+            bodyElements = listOf(
+                WordBodyElement.ParagraphElement(Paragraph(runs = listOf(TextRun("First paragraph."))))
+            )
+        )
+        wordEngine.saveDocument(uri, initialDoc)
+
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .openHelperFactory(FrameworkSQLiteOpenHelperFactory())
+            .build()
+        val docRepo = DocumentRepository(context, db.pdfAnnotationDao())
+        val fileRepo = FileRepository(context, db.recentFileDao(), db.favoriteFileDao(), db.passwordProtectionDao())
+
+        val viewModel = WordViewModel(docRepo, fileRepo)
+        viewModel.loadDocument(uri)
+
+        var state = viewModel.uiState.value
+        // Busy-wait briefly for StateFlow emission in test coroutine
+        var attempts = 0
+        while (viewModel.uiState.value !is WordUiState.Success && attempts < 60) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(50)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            attempts++
+        }
+        state = viewModel.uiState.value
+        assertTrue("ViewModel state must become Success", state is WordUiState.Success)
+        val successState = state as WordUiState.Success
+        assertEquals(1, successState.document.paragraphs.size)
+
+        // 1. Formatting active paragraph: Bold and Heading
+        viewModel.setActiveElement(0)
+        viewModel.toggleBold()
+        var updated = viewModel.uiState.value as WordUiState.Success
+        assertTrue("Active paragraph must be bold", updated.isBold)
+        val p0 = (updated.document.bodyElements[0] as WordBodyElement.ParagraphElement).paragraph
+        assertTrue("Paragraph run must have bold style", p0.runs.all { it.style.isBold })
+
+        viewModel.toggleHeading(1)
+        updated = viewModel.uiState.value as WordUiState.Success
+        assertTrue("Active paragraph must be marked as header", updated.isHeader)
+        assertEquals(1, updated.headerLevel)
+
+        // 2. Insert table and update table cell
+        viewModel.insertTable(rows = 2, cols = 2, afterIndex = 0)
+        updated = viewModel.uiState.value as WordUiState.Success
+        assertEquals(2, updated.document.bodyElements.size)
+        assertTrue("Second element must be a table", updated.document.bodyElements[1] is WordBodyElement.TableElement)
+
+        viewModel.updateTableCell(elementIndex = 1, rowIndex = 0, colIndex = 0, text = "Custom Header Cell")
+        updated = viewModel.uiState.value as WordUiState.Success
+        val tableElem = updated.document.bodyElements[1] as WordBodyElement.TableElement
+        assertEquals("Custom Header Cell", tableElem.table.rows[0].cells[0].text)
+
+        // 3. Test Undo restores previous cell text
+        viewModel.undo()
+        updated = viewModel.uiState.value as WordUiState.Success
+        val tableAfterUndo = updated.document.bodyElements[1] as WordBodyElement.TableElement
+        assertEquals("Header 1", tableAfterUndo.table.rows[0].cells[0].text)
+
+        // 4. Test Redo re-applies custom cell text
+        viewModel.redo()
+        updated = viewModel.uiState.value as WordUiState.Success
+        val tableAfterRedo = updated.document.bodyElements[1] as WordBodyElement.TableElement
+        assertEquals("Custom Header Cell", tableAfterRedo.table.rows[0].cells[0].text)
 
         db.close()
     }

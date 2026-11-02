@@ -374,7 +374,7 @@ private fun IdleUploadState(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "100% Offline Processing. DocLite is an offline document utility and is not an RBI-registered Account Aggregator, bank, or financial advisor. All calculations and extractions are performed locally on your device for personal informational purposes only. Do not rely on DocLite for official tax, accounting, or legal filings.",
+                    text = "Local On-Device Processing. DocLite is an offline document utility and is not an RBI-registered Account Aggregator, bank, or financial advisor. All calculations and extractions are performed locally on your device for personal informational purposes only. Do not rely on DocLite for official tax, accounting, or legal filings.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

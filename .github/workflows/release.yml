@@ -194,7 +194,7 @@ jobs:
           \`\`\`
           
           ### 🔒 Privacy & Architecture
-          * **100% Offline**: All document viewing, editing, and bank statement analytics are executed locally on-device. Zero cloud telemetry.
+          * **Offline-First & On-Device**: All document viewing, editing, and bank statement analytics are executed locally on-device. Zero cloud telemetry.
           * **Android Compatibility**: Android 7.0 (API 24) through Android 16 (API 36).
           * **License**: DocLite Source Code License (Non-Commercial Version 1.0).
           EOF

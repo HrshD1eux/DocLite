@@ -32,7 +32,8 @@ data class TextStyle(
 
 data class TextRun(
     val text: String,
-    val style: TextStyle = TextStyle()
+    val style: TextStyle = TextStyle(),
+    val rawXml: String? = null
 )
 
 data class WordTableCell(
@@ -50,8 +51,24 @@ data class WordTable(
 )
 
 sealed interface WordBodyElement {
-    data class ParagraphElement(val paragraph: Paragraph) : WordBodyElement
-    data class TableElement(val table: WordTable) : WordBodyElement
+    val id: String
+
+    data class ParagraphElement(val paragraph: Paragraph) : WordBodyElement {
+        override val id: String get() = paragraph.id
+    }
+
+    data class TableElement(val table: WordTable) : WordBodyElement {
+        override val id: String get() = table.id
+    }
+
+    data class ImageElement(
+        val imageUri: String,
+        val widthDp: Int = 240,
+        val heightDp: Int = 180,
+        val caption: String? = null,
+        val rawDrawingXml: String? = null,
+        override val id: String = java.util.UUID.randomUUID().toString()
+    ) : WordBodyElement
 }
 
 data class Paragraph(
@@ -60,7 +77,8 @@ data class Paragraph(
     val alignment: TextAlignment = TextAlignment.LEFT,
     val isHeader: Boolean = false,
     val headerLevel: Int = 0,
-    val bulletPrefix: String? = null
+    val bulletPrefix: String? = null,
+    val rawXml: String? = null
 ) {
     fun getPlainText(): String {
         val content = runs.joinToString("") { it.text }
@@ -76,7 +94,8 @@ data class WordDocument(
     ),
     val wordCount: Int = 0,
     val characterCount: Int = 0,
-    val hasUnrecognizedElements: Boolean = false
+    val hasUnrecognizedElements: Boolean = false,
+    val sectPrXml: String? = null
 ) {
     /** Computed view — always in sync with bodyElements. */
     val paragraphs: List<Paragraph>
@@ -88,4 +107,3 @@ data class WordDocument(
         get() = bodyElements.filterIsInstance<WordBodyElement.TableElement>()
             .map { it.table }
 }
-

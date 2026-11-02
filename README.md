@@ -6,11 +6,11 @@
 
 # DocLite
 
-**Fast, Private, 100% Offline Android Office Suite & Bank Statement Analyzer**
+**Fast, Private, Offline Android Office Suite & Bank Statement Analyzer**
 
 [![Minimum API](https://img.shields.io/badge/Min%20API-24%20(Android%207.0)-brightgreen.svg)](https://developer.android.com)
 [![Target API](https://img.shields.io/badge/Target%20API-36%20(Android%2016)-blue.svg)](https://developer.android.com)
-[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Offline-success.svg)](#privacy--security)
+[![Privacy](https://img.shields.io/badge/Privacy-Offline--First-success.svg)](#privacy--security)
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-orange.svg)](LICENSE)
 [![Download Latest APK](https://img.shields.io/badge/Download-Latest%20APK-purple.svg)](https://github.com/HrshD1eux/DocLite/releases/latest/download/app-release.apk)
 
@@ -58,7 +58,7 @@ Analyze financial statements on your phone with zero data leaving your device:
 * **Search & Filter**: Search transactions and parties in real time.
 
 ### 🔒 Privacy & Architecture
-* **100% Offline Execution**: All parsing and rendering happens locally. No documents or sensitive financial logs are transmitted externally.
+* **Local On-Device Execution**: All parsing and rendering happens locally. No documents or sensitive financial logs are transmitted externally.
 * **Google Play Compliant**: Adheres to modern Scoped Storage standards (Storage Access Framework `ACTION_OPEN_DOCUMENT` and MediaStore queries) with zero intrusive permissions.
 * **R8 Minified & ProGuard Protected**: Hardened release builds with resource shrinking to keep APK footprint minimal.
 
@@ -115,4 +115,4 @@ This project is licensed under the **DocLite Source Code License (Non-Commercial
 Microsoft, Microsoft Word, Microsoft Excel, Microsoft PowerPoint, and Microsoft Office are registered trademarks of Microsoft Corporation. Adobe and Adobe PDF are registered trademarks of Adobe Systems Inc. WPS Office is a trademark of Kingsoft Corporation. All product names, logos, and brands mentioned are property of their respective owners and are used strictly for identification and compatibility purposes. DocLite is an independent application and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation, Adobe Inc., or Kingsoft Corporation.
 
 ### Financial Utility Disclaimer
-DocLite is an offline file viewing utility. It is not an Account Aggregator, bank, registered investment adviser, or financial institution. All bank statement parsing, calculation, and party categorization are performed 100% locally on your device for personal informational purposes only. Do not rely on DocLite for accounting, tax, or legal filings. Always verify details with official bank statements.
+DocLite is an offline file viewing utility. It is not an Account Aggregator, bank, registered investment adviser, or financial institution. All bank statement parsing, calculation, and party categorization are performed entirely locally on your device for personal informational purposes only. Do not rely on DocLite for accounting, tax, or legal filings. Always verify details with official bank statements.
