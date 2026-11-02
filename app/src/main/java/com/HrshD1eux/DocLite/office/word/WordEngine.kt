@@ -25,6 +25,7 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
 import java.io.StringReader
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -108,6 +109,32 @@ class WordEngine(private val context: Context) {
 </w:styles>"""
     }
 
+    suspend fun createDocument(title: String): WordDocument = withContext(Dispatchers.IO) {
+        val fileName = if (title.endsWith(".docx", ignoreCase = true)) title else "$title.docx"
+        val docFile = File(context.filesDir, "DocLite_Documents/$fileName")
+        docFile.parentFile?.mkdirs()
+
+        val initialDoc = WordDocument(
+            title = fileName,
+            fileUri = Uri.fromFile(docFile).toString(),
+            bodyElements = listOf(
+                WordBodyElement.ParagraphElement(
+                    Paragraph(
+                        runs = listOf(TextRun(text = title.removeSuffix(".docx"), style = TextStyle(isBold = true, fontSizeSp = 24f))),
+                        isHeader = true,
+                        headerLevel = 1
+                    )
+                ),
+                WordBodyElement.ParagraphElement(
+                    Paragraph(runs = listOf(TextRun("Type your document text here...")))
+                )
+            )
+        )
+
+        saveDocument(Uri.fromFile(docFile), initialDoc)
+        initialDoc
+    }
+
     suspend fun loadDocument(uri: Uri): WordDocument = withContext(Dispatchers.IO) {
         val fileName = getFileName(uri)
         val ext = fileName.substringAfterLast('.', "").lowercase()
@@ -162,17 +189,24 @@ class WordEngine(private val context: Context) {
         try {
             zipFile = ZipFile(docxFile)
             val docEntry = zipFile.getEntry("word/document.xml")
+                ?: zipFile.entries().asSequence().firstOrNull {
+                    it.name.replace('\\', '/').trimStart('/').equals("word/document.xml", ignoreCase = true)
+                }
                 ?: throw IllegalArgumentException("The archive is missing word/document.xml")
 
             // 1. Read document.xml as string
             val docXmlContent = zipFile.getInputStream(docEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
 
             // 2. Extract sectPr if present
-            val sectPrXml = Regex("<w:sectPr[\\s\\S]*?</w:sectPr>").find(docXmlContent)?.value
+            val sectPrXml = Regex("<w:sectPr[\\s\\S]*?</w:sectPr>|<w:sectPr[^>]*/>").find(docXmlContent)?.value
 
             // 3. Parse relationships to map rId -> media path
             val imageRelsMap = mutableMapOf<String, String>()
             val relsEntry = zipFile.getEntry("word/_rels/document.xml.rels")
+                ?: zipFile.entries().asSequence().firstOrNull {
+                    it.name.replace('\\', '/').trimStart('/').equals("word/_rels/document.xml.rels", ignoreCase = true)
+                }
+
             if (relsEntry != null) {
                 try {
                     zipFile.getInputStream(relsEntry).use { relsStream ->
@@ -209,6 +243,9 @@ class WordEngine(private val context: Context) {
             val rIdToCachedUri = mutableMapOf<String, String>()
             imageRelsMap.forEach { (rId, zipEntryPath) ->
                 val entry = zipFile.getEntry(zipEntryPath)
+                    ?: zipFile.entries().asSequence().firstOrNull {
+                        it.name.replace('\\', '/').trimStart('/').equals(zipEntryPath, ignoreCase = true)
+                    }
                 if (entry != null) {
                     try {
                         val fileExt = zipEntryPath.substringAfterLast('.', "png")
@@ -247,7 +284,16 @@ class WordEngine(private val context: Context) {
             var isHeader = false
             var headerLevel = 0
             var bulletPrefix: String? = null
+            var hasPageBreakBefore = false
             val currentRuns = mutableListOf<TextRun>()
+
+            // Default run styling from paragraph properties (<w:pPr><w:rPr>...</w:rPr></w:pPr>)
+            var insidePPr = false
+            var pDefaultBold = false
+            var pDefaultItalic = false
+            var pDefaultUnderline = false
+            var pDefaultFontSize = 16f
+            var pDefaultColor = "#1C1B1F"
 
             var insideRun = false
             var isBold = false
@@ -255,6 +301,9 @@ class WordEngine(private val context: Context) {
             var isUnderline = false
             var fontSizeSp = 16f
             var fontColorHex = "#1C1B1F"
+            var highlightColorHex: String? = null
+
+            var pageNumberCounter = 1
 
             while (eventType != XmlPullParser.END_DOCUMENT) {
                 when (eventType) {
@@ -283,7 +332,23 @@ class WordEngine(private val context: Context) {
                                 isHeader = false
                                 headerLevel = 0
                                 bulletPrefix = null
+                                hasPageBreakBefore = false
                                 currentRuns.clear()
+
+                                insidePPr = false
+                                pDefaultBold = false
+                                pDefaultItalic = false
+                                pDefaultUnderline = false
+                                pDefaultFontSize = 16f
+                                pDefaultColor = "#1C1B1F"
+                            }
+                            "pPr" -> {
+                                insidePPr = true
+                            }
+                            "pageBreakBefore" -> {
+                                if (insidePPr) {
+                                    hasPageBreakBefore = true
+                                }
                             }
                             "jc" -> {
                                 if (insideParagraph) {
@@ -309,6 +374,12 @@ class WordEngine(private val context: Context) {
                                                 styleVal.contains("3") -> 3
                                                 else -> 1
                                             }
+                                            pDefaultBold = true
+                                            pDefaultFontSize = when (headerLevel) {
+                                                1 -> 24f
+                                                2 -> 20f
+                                                else -> 18f
+                                            }
                                         }
                                         if (styleVal.contains("bullet") || styleVal.contains("list")) {
                                             bulletPrefix = "• "
@@ -323,46 +394,68 @@ class WordEngine(private val context: Context) {
                             }
                             "r" -> {
                                 insideRun = true
-                                isBold = false
-                                isItalic = false
-                                isUnderline = false
-                                fontSizeSp = 16f
-                                fontColorHex = "#1C1B1F"
+                                isBold = pDefaultBold
+                                isItalic = pDefaultItalic
+                                isUnderline = pDefaultUnderline
+                                fontSizeSp = pDefaultFontSize
+                                fontColorHex = pDefaultColor
+                                highlightColorHex = null
                             }
-                            "b" -> {
-                                if (insideRun) {
-                                    val valAttr = getValAttr(parser)
-                                    isBold = valAttr == null || valAttr == "1" || valAttr.equals("true", ignoreCase = true)
+                            "rStyle" -> {
+                                val valAttr = getValAttr(parser)?.lowercase() ?: ""
+                                if (valAttr.contains("strong") || valAttr.contains("bold")) {
+                                    if (insideRun) isBold = true else pDefaultBold = true
+                                } else if (valAttr.contains("emphasis") || valAttr.contains("italic")) {
+                                    if (insideRun) isItalic = true else pDefaultItalic = true
                                 }
                             }
-                            "i" -> {
-                                if (insideRun) {
-                                    val valAttr = getValAttr(parser)
-                                    isItalic = valAttr == null || valAttr == "1" || valAttr.equals("true", ignoreCase = true)
-                                }
+                            "b", "bCs" -> {
+                                val valAttr = getValAttr(parser)
+                                val bVal = valAttr == null || valAttr == "1" || valAttr.equals("true", ignoreCase = true)
+                                if (insideRun) isBold = bVal else if (insidePPr) pDefaultBold = bVal
+                            }
+                            "i", "iCs" -> {
+                                val valAttr = getValAttr(parser)
+                                val iVal = valAttr == null || valAttr == "1" || valAttr.equals("true", ignoreCase = true)
+                                if (insideRun) isItalic = iVal else if (insidePPr) pDefaultItalic = iVal
                             }
                             "u" -> {
-                                if (insideRun) {
-                                    val valAttr = getValAttr(parser)
-                                    isUnderline = valAttr == null || valAttr != "none"
-                                }
+                                val valAttr = getValAttr(parser)
+                                val uVal = valAttr == null || valAttr != "none"
+                                if (insideRun) isUnderline = uVal else if (insidePPr) pDefaultUnderline = uVal
                             }
-                            "sz" -> {
-                                if (insideRun) {
-                                    val valAttr = getValAttr(parser)
-                                    val halfPts = valAttr?.toFloatOrNull()
-                                    if (halfPts != null && halfPts > 0) {
-                                        fontSizeSp = halfPts / 2f
-                                    }
+                            "sz", "szCs" -> {
+                                val valAttr = getValAttr(parser)
+                                val halfPts = valAttr?.toFloatOrNull()
+                                if (halfPts != null && halfPts > 0) {
+                                    val sizeSp = halfPts / 2f
+                                    if (insideRun) fontSizeSp = sizeSp else if (insidePPr) pDefaultFontSize = sizeSp
                                 }
                             }
                             "color" -> {
-                                if (insideRun) {
-                                    val valAttr = getValAttr(parser)
-                                    if (valAttr != null && valAttr != "auto") {
-                                        fontColorHex = if (valAttr.startsWith("#")) valAttr else "#$valAttr"
+                                val valAttr = getValAttr(parser)
+                                if (valAttr != null && valAttr != "auto") {
+                                    val colHex = if (valAttr.startsWith("#")) valAttr else "#$valAttr"
+                                    if (insideRun) fontColorHex = colHex else if (insidePPr) pDefaultColor = colHex
+                                }
+                            }
+                            "highlight" -> {
+                                val valAttr = getValAttr(parser)
+                                if (valAttr != null && valAttr != "none") {
+                                    highlightColorHex = when (valAttr.lowercase()) {
+                                        "yellow" -> "#FFF59D"
+                                        "green" -> "#A5D6A7"
+                                        "cyan" -> "#80DEEA"
+                                        "magenta" -> "#F48FB1"
+                                        "blue" -> "#90CAF9"
+                                        "red" -> "#FFAB91"
+                                        else -> "#FFF59D"
                                     }
                                 }
+                            }
+                            "lastRenderedPageBreak" -> {
+                                pageNumberCounter++
+                                bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
                             }
                             "t" -> {
                                 if (insideRun) {
@@ -380,7 +473,8 @@ class WordEngine(private val context: Context) {
                                                         isItalic = isItalic,
                                                         isUnderline = isUnderline,
                                                         fontSizeSp = fontSizeSp,
-                                                        fontColorHex = fontColorHex
+                                                        fontColorHex = fontColorHex,
+                                                        highlightColorHex = highlightColorHex
                                                     )
                                                 )
                                             )
@@ -400,7 +494,11 @@ class WordEngine(private val context: Context) {
                                 }
                             }
                             "br" -> {
-                                if (insideRun) {
+                                val typeAttr = parser.getAttributeValue(null, "type")
+                                if (typeAttr.equals("page", ignoreCase = true)) {
+                                    pageNumberCounter++
+                                    bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                } else if (insideRun) {
                                     if (insideTableCell) {
                                         currentCellText.append("\n")
                                     } else {
@@ -409,7 +507,6 @@ class WordEngine(private val context: Context) {
                                 }
                             }
                             "drawing", "pict" -> {
-                                // Extract embedded image blipId and create ImageElement
                                 val isDrawing = tag == "drawing"
                                 var blipId: String? = null
                                 var depth = 1
@@ -451,6 +548,7 @@ class WordEngine(private val context: Context) {
                     XmlPullParser.END_TAG -> {
                         val tag = parser.name?.substringAfterLast(':') ?: ""
                         when (tag) {
+                            "pPr" -> insidePPr = false
                             "r" -> insideRun = false
                             "p" -> {
                                 if (!insideTableCell) {
@@ -460,8 +558,13 @@ class WordEngine(private val context: Context) {
                                         alignment = paraAlignment,
                                         isHeader = isHeader,
                                         headerLevel = headerLevel,
-                                        bulletPrefix = bulletPrefix
+                                        bulletPrefix = bulletPrefix,
+                                        hasPageBreakBefore = hasPageBreakBefore
                                     )
+                                    if (hasPageBreakBefore) {
+                                        pageNumberCounter++
+                                        bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                    }
                                     bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
                                 }
                                 insideParagraph = false
@@ -684,16 +787,27 @@ class WordEngine(private val context: Context) {
                             zipFile.use { zipIn ->
                                 val zos = ZipOutputStream(tempTarget.outputStream())
                                 zos.use { zipOut ->
+                                    val writtenEntries = mutableSetOf<String>()
                                     val entries = zipIn.entries()
                                     while (entries.hasMoreElements()) {
                                         val entry = entries.nextElement()
-                                        if (entry.name != "word/document.xml") {
-                                            val newEntry = ZipEntry(entry.name)
-                                            zipOut.putNextEntry(newEntry)
-                                            zipIn.getInputStream(entry).use { it.copyTo(zipOut) }
-                                            zipOut.closeEntry()
+                                        val normName = entry.name.replace('\\', '/').trimStart('/')
+                                        if (normName.equals("word/document.xml", ignoreCase = true)) {
+                                            continue
                                         }
+                                        if (!writtenEntries.add(normName)) {
+                                            continue
+                                        }
+
+                                        val newEntry = ZipEntry(normName)
+                                        zipOut.putNextEntry(newEntry)
+                                        if (!entry.isDirectory) {
+                                            zipIn.getInputStream(entry).use { it.copyTo(zipOut) }
+                                        }
+                                        zipOut.closeEntry()
                                     }
+
+                                    // Write updated document.xml
                                     val docEntry = ZipEntry("word/document.xml")
                                     zipOut.putNextEntry(docEntry)
                                     zipOut.write(docXmlContent)
@@ -736,7 +850,7 @@ class WordEngine(private val context: Context) {
                 }
             }
 
-            val out = context.contentResolver.openOutputStream(uri, "wt")
+            val out = openOutputStreamRobust(uri)
                 ?: throw java.io.IOException("Could not open destination stream for $uri")
             out.use { dst ->
                 tempTarget.inputStream().use { src ->
@@ -796,12 +910,16 @@ class WordEngine(private val context: Context) {
                         }
                     }
                     is WordBodyElement.ImageElement -> {
-                        // POI doesn't easily embed raw drawing XML, but handled seamlessly by native XML serializer
+                        // Handled natively by XML serializer
+                    }
+                    is WordBodyElement.PageBreakElement -> {
+                        val p = xwpf.createParagraph()
+                        p.createRun().addBreak(org.apache.poi.xwpf.usermodel.BreakType.PAGE)
                     }
                 }
             }
 
-            val outputStream = context.contentResolver.openOutputStream(uri, "wt")
+            val outputStream = openOutputStreamRobust(uri)
                 ?: throw java.io.IOException("Could not open output stream for saving.")
             outputStream.use { xwpf.write(it) }
             return true
@@ -828,6 +946,9 @@ class WordEngine(private val context: Context) {
 
         for (elem in document.bodyElements) {
             when (elem) {
+                is WordBodyElement.PageBreakElement -> {
+                    sb.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>")
+                }
                 is WordBodyElement.ParagraphElement -> {
                     val p = elem.paragraph
                     sb.append("<w:p>")
@@ -839,11 +960,16 @@ class WordEngine(private val context: Context) {
                         TextAlignment.LEFT -> "left"
                     }
                     sb.append("""<w:jc w:val="$jcVal"/>""")
+
+                    if (p.hasPageBreakBefore) {
+                        sb.append("<w:pageBreakBefore/>")
+                    }
+
+                    // Enforce at most one w:pStyle per OpenXML specification
                     if (p.isHeader) {
                         val level = p.headerLevel.coerceIn(1, 3)
                         sb.append("""<w:pStyle w:val="Heading$level"/>""")
-                    }
-                    if (p.bulletPrefix != null) {
+                    } else if (p.bulletPrefix != null) {
                         sb.append("""<w:pStyle w:val="ListParagraph"/>""")
                     }
                     sb.append("</w:pPr>")
@@ -854,13 +980,23 @@ class WordEngine(private val context: Context) {
                         } else {
                             sb.append("<w:r>")
                             sb.append("<w:rPr>")
-                            if (run.style.isBold) sb.append("<w:b/>")
+                            if (run.style.isBold || (p.isHeader && !run.style.isBold)) sb.append("<w:b/>")
                             if (run.style.isItalic) sb.append("<w:i/>")
                             if (run.style.isUnderline) sb.append("""<w:u w:val="single"/>""")
-                            val halfPts = (run.style.fontSizeSp * 2).toInt()
+                            val effectiveFontSize = if (p.isHeader) {
+                                when (p.headerLevel) {
+                                    1 -> 24f
+                                    2 -> 20f
+                                    else -> 18f
+                                }
+                            } else run.style.fontSizeSp
+                            val halfPts = (effectiveFontSize * 2).toInt()
                             if (halfPts > 0) sb.append("""<w:sz w:val="$halfPts"/>""")
                             val colorHex = run.style.fontColorHex.removePrefix("#")
                             if (colorHex.length == 6) sb.append("""<w:color w:val="$colorHex"/>""")
+                            if (run.style.highlightColorHex != null) {
+                                sb.append("""<w:highlight w:val="yellow"/>""")
+                            }
                             sb.append("</w:rPr>")
                             sb.append("""<w:t xml:space="preserve">""")
                             sb.append(escapeXml(run.text))
@@ -872,16 +1008,33 @@ class WordEngine(private val context: Context) {
                 }
                 is WordBodyElement.TableElement -> {
                     val table = elem.table
+                    val numCols = table.rows.maxOfOrNull { it.cells.size }?.coerceAtLeast(1) ?: 1
+                    val colWidthDxa = (9000 / numCols).coerceAtLeast(720)
+
                     sb.append("<w:tbl>")
                     sb.append("<w:tblPr>")
+                    sb.append("""<w:tblW w:w="0" w:type="auto"/>""")
                     sb.append("""<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders>""")
                     sb.append("</w:tblPr>")
+
+                    sb.append("<w:tblGrid>")
+                    for (c in 0 until numCols) {
+                        sb.append("""<w:gridCol w:w="$colWidthDxa"/>""")
+                    }
+                    sb.append("</w:tblGrid>")
+
                     for (row in table.rows) {
                         sb.append("<w:tr>")
                         for (cell in row.cells) {
                             sb.append("<w:tc>")
+                            sb.append("<w:tcPr>")
+                            sb.append("""<w:tcW w:w="$colWidthDxa" w:type="dxa"/>""")
+                            sb.append("</w:tcPr>")
                             sb.append("<w:p>")
                             sb.append("<w:r>")
+                            if (cell.isHeader) {
+                                sb.append("<w:rPr><w:b/></w:rPr>")
+                            }
                             sb.append("""<w:t xml:space="preserve">""")
                             sb.append(escapeXml(cell.text))
                             sb.append("</w:t>")
@@ -903,8 +1056,9 @@ class WordEngine(private val context: Context) {
             }
         }
 
-        if (!document.sectPrXml.isNullOrBlank()) {
-            sb.append(document.sectPrXml)
+        val rawSectPr = document.sectPrXml?.trim()
+        if (!rawSectPr.isNullOrBlank() && (rawSectPr.endsWith("</w:sectPr>") || rawSectPr.endsWith("/>"))) {
+            sb.append(rawSectPr)
         } else {
             sb.append("""<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>""")
         }
@@ -914,7 +1068,16 @@ class WordEngine(private val context: Context) {
     }
 
     private fun escapeXml(text: String): String {
-        return text.replace("&", "&amp;")
+        val sanitized = buildString(text.length) {
+            for (ch in text) {
+                // Strip control characters illegal in XML 1.0 (permits tab \t, lf \n, cr \r)
+                if (ch == '\t' || ch == '\n' || ch == '\r' || (ch in ' '..'\uD7FF') || (ch in '\uE000'..'\uFFFD')) {
+                    append(ch)
+                }
+            }
+        }
+        return sanitized
+            .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
@@ -952,6 +1115,28 @@ class WordEngine(private val context: Context) {
                 else context.contentResolver.openInputStream(uri)
             } else {
                 context.contentResolver.openInputStream(uri)
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    private fun openOutputStreamRobust(uri: Uri): OutputStream? {
+        return try {
+            if (uri.scheme == "file") {
+                val file = File(uri.path ?: "")
+                file.parentFile?.mkdirs()
+                java.io.FileOutputStream(file)
+            } else {
+                try {
+                    context.contentResolver.openOutputStream(uri, "w")
+                } catch (e1: Exception) {
+                    try {
+                        context.contentResolver.openOutputStream(uri, "rwt")
+                    } catch (e2: Exception) {
+                        context.contentResolver.openOutputStream(uri)
+                    }
+                }
             }
         } catch (t: Throwable) {
             null

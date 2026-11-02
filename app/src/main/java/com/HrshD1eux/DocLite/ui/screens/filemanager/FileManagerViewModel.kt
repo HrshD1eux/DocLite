@@ -2,11 +2,14 @@ package com.HrshD1eux.DocLite.ui.screens.filemanager
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.HrshD1eux.DocLite.database.entity.TrashedFileEntity
 import com.HrshD1eux.DocLite.models.DocumentFile
 import com.HrshD1eux.DocLite.repository.FileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class SortOption {
@@ -20,6 +23,7 @@ sealed interface FileManagerUiState {
         val searchQuery: String = "",
         val currentSort: SortOption = SortOption.DATE,
         val isAscending: Boolean = false,
+        val isGridView: Boolean = false,
         val selectedFileIds: Set<String> = emptySet(),
         val actionMessage: String? = null
     ) : FileManagerUiState
@@ -31,6 +35,9 @@ class FileManagerViewModel(
 
     private val _uiState = MutableStateFlow<FileManagerUiState>(FileManagerUiState.Loading)
     val uiState: StateFlow<FileManagerUiState> = _uiState.asStateFlow()
+
+    val trashedFiles: StateFlow<List<TrashedFileEntity>> = fileRepository.trashedFilesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var cachedFiles: List<DocumentFile> = emptyList()
 
@@ -51,6 +58,7 @@ class FileManagerViewModel(
         val query = currentState?.searchQuery ?: ""
         val sort = currentState?.currentSort ?: SortOption.DATE
         val asc = currentState?.isAscending ?: false
+        val grid = currentState?.isGridView ?: false
         val currentSelected = currentState?.selectedFileIds ?: emptySet()
 
         val filtered = filterAndSortFiles(cachedFiles, query, sort, asc)
@@ -61,6 +69,7 @@ class FileManagerViewModel(
             searchQuery = query,
             currentSort = sort,
             isAscending = asc,
+            isGridView = grid,
             selectedFileIds = validSelected,
             actionMessage = currentState?.actionMessage
         )
@@ -68,6 +77,11 @@ class FileManagerViewModel(
 
     fun refresh() {
         loadFiles()
+    }
+
+    fun toggleViewMode() {
+        val currentState = _uiState.value as? FileManagerUiState.Success ?: return
+        _uiState.value = currentState.copy(isGridView = !currentState.isGridView)
     }
 
     fun updateSearchQuery(query: String) {
@@ -103,7 +117,46 @@ class FileManagerViewModel(
             val currentState = _uiState.value as? FileManagerUiState.Success
             if (currentState != null) {
                 _uiState.value = currentState.copy(
-                    actionMessage = if (success) "File deleted" else "Failed to delete"
+                    actionMessage = if (success) "Moved '${file.name}' to Trash (30 days retention)" else "Failed to delete"
+                )
+            }
+        }
+    }
+
+    fun restoreTrashedFile(trashed: TrashedFileEntity) {
+        viewModelScope.launch {
+            val success = fileRepository.restoreFromTrash(trashed)
+            reloadFilesInternal()
+            val currentState = _uiState.value as? FileManagerUiState.Success
+            if (currentState != null) {
+                _uiState.value = currentState.copy(
+                    actionMessage = if (success) "Restored '${trashed.name}'" else "Failed to restore file"
+                )
+            }
+        }
+    }
+
+    fun permanentlyDeleteTrashedFile(trashed: TrashedFileEntity) {
+        viewModelScope.launch {
+            val success = fileRepository.permanentlyDeleteTrashed(trashed)
+            reloadFilesInternal()
+            val currentState = _uiState.value as? FileManagerUiState.Success
+            if (currentState != null) {
+                _uiState.value = currentState.copy(
+                    actionMessage = if (success) "Permanently deleted '${trashed.name}'" else "Failed to delete"
+                )
+            }
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            val success = fileRepository.emptyTrash()
+            reloadFilesInternal()
+            val currentState = _uiState.value as? FileManagerUiState.Success
+            if (currentState != null) {
+                _uiState.value = currentState.copy(
+                    actionMessage = if (success) "Trash emptied" else "Failed to empty trash"
                 )
             }
         }
@@ -184,7 +237,7 @@ class FileManagerViewModel(
             if (updatedState != null) {
                 _uiState.value = updatedState.copy(
                     selectedFileIds = emptySet(),
-                    actionMessage = if (count > 0) "$count file(s) deleted" else "Failed to delete files"
+                    actionMessage = if (count > 0) "Moved $count file(s) to Trash (30 days retention)" else "Failed to delete files"
                 )
             }
         }
@@ -206,4 +259,3 @@ class FileManagerViewModel(
         return sorted
     }
 }
-

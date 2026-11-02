@@ -31,12 +31,12 @@ class DocLiteApplication : Application() {
 
         container = AppContainer(this)
 
-        // Seed initial sample documents asynchronously and safely
+        // Purge expired trash documents (>30 days retention) asynchronously on app launch
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                container.fileRepository.seedInitialSampleDocumentsIfNeeded()
+                container.fileRepository.purgeExpiredTrash()
             } catch (t: Throwable) {
-                Log.w("DocLiteApplication", "Sample document seeding skipped or failed safely: ${t.message}")
+                Log.w("DocLiteApplication", "Trash cleanup on launch skipped: ${t.message}")
             }
         }
     }

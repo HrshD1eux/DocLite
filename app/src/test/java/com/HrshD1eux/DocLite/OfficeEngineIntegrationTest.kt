@@ -33,8 +33,13 @@ import com.HrshD1eux.DocLite.ui.screens.word.WordUiState
 import kotlinx.coroutines.test.runTest
 import org.apache.poi.xslf.usermodel.XMLSlideShow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.flow.first
+import com.HrshD1eux.DocLite.database.entity.TrashedFileEntity
+import com.HrshD1eux.DocLite.models.DocumentFile
+import com.HrshD1eux.DocLite.models.DocumentFormat
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -652,5 +657,117 @@ class OfficeEngineIntegrationTest {
         assertEquals("Custom Header Cell", tableAfterRedo.table.rows[0].cells[0].text)
 
         db.close()
+    }
+
+    @Test
+    fun fileRepository_trashBinLifecycle_movesRestoresAndPurgesAfter30Days() = runTest {
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val fileRepo = FileRepository(
+            context = context,
+            recentFileDao = db.recentFileDao(),
+            favoriteFileDao = db.favoriteFileDao(),
+            passwordProtectionDao = db.passwordProtectionDao(),
+            trashedFileDao = db.trashedFileDao()
+        )
+
+        // 1. Create a dummy test file
+        val testFile = File(context.filesDir, "test_doc.docx").apply {
+            writeText("dummy content for trash bin test")
+        }
+        val docFile = DocumentFile(
+            id = testFile.absolutePath,
+            uriString = Uri.fromFile(testFile).toString(),
+            name = "test_doc.docx",
+            path = testFile.absolutePath,
+            sizeBytes = testFile.length(),
+            lastModified = System.currentTimeMillis(),
+            format = DocumentFormat.WORD
+        )
+
+        // 2. Move file to trash
+        val moved = fileRepo.moveToTrash(docFile)
+        assertTrue("File must be moved to trash successfully", moved)
+        assertFalse("Original file must no longer exist at original path", testFile.exists())
+
+        // 3. Verify it appears in trashedFilesFlow
+        var trashedList = fileRepo.trashedFilesFlow.first()
+        assertEquals("Trash bin must have 1 file", 1, trashedList.size)
+        val trashedEntity = trashedList[0]
+        assertEquals("test_doc.docx", trashedEntity.name)
+
+        // 4. Restore from trash
+        val restored = fileRepo.restoreFromTrash(trashedEntity)
+        assertTrue("File must be restored successfully", restored)
+        assertTrue("Restored file must exist on disk", testFile.exists())
+        trashedList = fileRepo.trashedFilesFlow.first()
+        assertEquals("Trash bin must be empty after restore", 0, trashedList.size)
+
+        // 5. Test 30-day purge: Insert an expired entity directly
+        val expiredEntity = TrashedFileEntity(
+            uriString = "file:///expired.docx",
+            originalPath = "/tmp/expired.docx",
+            trashedPath = File(context.filesDir, "expired_dummy.docx").apply { writeText("expired") }.absolutePath,
+            name = "expired.docx",
+            sizeBytes = 100,
+            formatName = "WORD",
+            trashedTimestamp = System.currentTimeMillis() - (35L * 24 * 60 * 60 * 1000L),
+            expiryTimestamp = System.currentTimeMillis() - (5L * 24 * 60 * 60 * 1000L) // expired 5 days ago
+        )
+        db.trashedFileDao().insertOrUpdate(expiredEntity)
+        assertEquals(1, fileRepo.trashedFilesFlow.first().size)
+
+        // Purge expired files
+        val purgedCount = fileRepo.purgeExpiredTrash()
+        assertEquals("Must purge 1 expired file", 1, purgedCount)
+        assertEquals("Trash bin must be empty after purging expired items", 0, fileRepo.trashedFilesFlow.first().size)
+
+        // Cleanup
+        testFile.delete()
+        db.close()
+    }
+
+    @Test
+    fun wordEngine_pageBreakElements_serializedAndParsedCorrectly() = runTest {
+        val testFile = File(context.filesDir, "page_break_test.docx")
+        if (testFile.exists()) testFile.delete()
+        val uri = Uri.fromFile(testFile)
+
+        // Create a document with Paragraph 1, PageBreak, Paragraph 2
+        val initialDoc = WordDocument(
+            title = "Page Break Test",
+            fileUri = uri.toString(),
+            bodyElements = listOf(
+                WordBodyElement.ParagraphElement(
+                    Paragraph(runs = listOf(TextRun("First Page Header Content")))
+                ),
+                WordBodyElement.PageBreakElement(),
+                WordBodyElement.ParagraphElement(
+                    Paragraph(runs = listOf(TextRun("Second Page Body Content")))
+                )
+            )
+        )
+
+        // Save using WordEngine
+        val saveSuccess = wordEngine.saveDocument(uri, initialDoc)
+        assertTrue("Saving document with page break must succeed", saveSuccess)
+        assertTrue("File must exist on disk", testFile.exists())
+
+        // Reload using WordEngine
+        val loadedDoc = wordEngine.loadDocument(uri)
+        assertNotNull("Loaded document must not be null", loadedDoc)
+
+        // Verify elements: must contain a page break element
+        val hasPageBreak = loadedDoc.bodyElements.any { it is WordBodyElement.PageBreakElement }
+        assertTrue("Loaded document must preserve PageBreakElement", hasPageBreak)
+
+        // Verify text from both pages is intact
+        val fullText = loadedDoc.paragraphs.joinToString("\n") { it.getPlainText() }
+        assertTrue("Full text must contain first page content", fullText.contains("First Page Header Content"))
+        assertTrue("Full text must contain second page content", fullText.contains("Second Page Body Content"))
+
+        // Cleanup
+        testFile.delete()
     }
 }

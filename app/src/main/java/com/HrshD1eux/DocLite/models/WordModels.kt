@@ -19,13 +19,23 @@ data class TextStyle(
     val isItalic: Boolean = false,
     val isUnderline: Boolean = false,
     val fontSizeSp: Float = 16f,
-    val fontColorHex: String = "#1C1B1F"
+    val fontColorHex: String = "#1C1B1F",
+    val highlightColorHex: String? = null
 ) {
     fun getComposeColor(): Color {
         return try {
             Color(android.graphics.Color.parseColor(fontColorHex))
         } catch (e: Exception) {
             Color.Black
+        }
+    }
+
+    fun getComposeHighlightColor(): Color? {
+        val hex = highlightColorHex ?: return null
+        return try {
+            Color(android.graphics.Color.parseColor(hex))
+        } catch (e: Exception) {
+            null
         }
     }
 }
@@ -69,6 +79,11 @@ sealed interface WordBodyElement {
         val rawDrawingXml: String? = null,
         override val id: String = java.util.UUID.randomUUID().toString()
     ) : WordBodyElement
+
+    data class PageBreakElement(
+        val pageNumber: Int = 0,
+        override val id: String = java.util.UUID.randomUUID().toString()
+    ) : WordBodyElement
 }
 
 data class Paragraph(
@@ -78,6 +93,7 @@ data class Paragraph(
     val isHeader: Boolean = false,
     val headerLevel: Int = 0,
     val bulletPrefix: String? = null,
+    val hasPageBreakBefore: Boolean = false,
     val rawXml: String? = null
 ) {
     fun getPlainText(): String {

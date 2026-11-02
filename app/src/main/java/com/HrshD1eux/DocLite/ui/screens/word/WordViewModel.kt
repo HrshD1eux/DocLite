@@ -308,12 +308,45 @@ class WordViewModel(
             is WordBodyElement.ImageElement -> {
                 elem.copy(id = java.util.UUID.randomUUID().toString())
             }
+            is WordBodyElement.PageBreakElement -> {
+                elem.copy(id = java.util.UUID.randomUUID().toString())
+            }
         }
 
         currentElements.add(targetIndex + 1, duplicated)
         _uiState.value = currentState.copy(
             document = currentState.document.copy(bodyElements = currentElements),
             activeElementIndex = targetIndex + 1,
+            canUndo = undoStack.isNotEmpty()
+        )
+    }
+
+    fun insertPageBreak(afterIndex: Int = -1) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        val targetIdx = if (afterIndex >= 0) afterIndex else currentState.activeElementIndex
+        commitUndoImmediate(currentState.document.bodyElements)
+
+        val currentElements = currentState.document.bodyElements.toMutableList()
+        val insertAt = (targetIdx + 1).coerceIn(0, currentElements.size)
+        currentElements.add(insertAt, WordBodyElement.PageBreakElement())
+
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = currentElements),
+            activeElementIndex = insertAt,
+            canUndo = undoStack.isNotEmpty()
+        )
+    }
+
+    fun deletePageBreak(elementIndex: Int) {
+        val currentState = _uiState.value as? WordUiState.Success ?: return
+        if (elementIndex !in currentState.document.bodyElements.indices) return
+        commitUndoImmediate(currentState.document.bodyElements)
+
+        val currentElements = currentState.document.bodyElements.toMutableList()
+        currentElements.removeAt(elementIndex)
+        _uiState.value = currentState.copy(
+            document = currentState.document.copy(bodyElements = currentElements),
+            activeElementIndex = (elementIndex - 1).coerceAtLeast(0),
             canUndo = undoStack.isNotEmpty()
         )
     }

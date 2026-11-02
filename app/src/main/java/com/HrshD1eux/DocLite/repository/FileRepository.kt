@@ -8,6 +8,8 @@ import androidx.core.content.ContextCompat
 import com.HrshD1eux.DocLite.database.dao.FavoriteFileDao
 import com.HrshD1eux.DocLite.database.dao.PasswordProtectionDao
 import com.HrshD1eux.DocLite.database.dao.RecentFileDao
+import com.HrshD1eux.DocLite.database.dao.TrashedFileDao
+import com.HrshD1eux.DocLite.database.entity.TrashedFileEntity
 import com.HrshD1eux.DocLite.database.entity.FavoriteFileEntity
 import com.HrshD1eux.DocLite.database.entity.PasswordProtectionEntity
 import com.HrshD1eux.DocLite.database.entity.RecentFileEntity
@@ -33,8 +35,12 @@ class FileRepository(
     private val context: Context,
     private val recentFileDao: RecentFileDao,
     private val favoriteFileDao: FavoriteFileDao,
-    private val passwordProtectionDao: PasswordProtectionDao
+    private val passwordProtectionDao: PasswordProtectionDao,
+    private val trashedFileDao: TrashedFileDao? = null
 ) {
+
+    val trashedFilesFlow: kotlinx.coroutines.flow.Flow<List<TrashedFileEntity>> =
+        trashedFileDao?.getAllTrashedFiles() ?: kotlinx.coroutines.flow.flowOf(emptyList())
 
     private val scanTriggerFlow = MutableStateFlow(System.currentTimeMillis())
 
@@ -663,7 +669,167 @@ class FileRepository(
         }
     }
 
+    suspend fun moveToTrash(file: DocumentFile): Boolean = withContext(Dispatchers.IO) {
+        try {
+            recentFileDao.deleteByUri(file.uriString)
+            favoriteFileDao.removeFavorite(file.uriString)
+            passwordProtectionDao.removePassword(file.uriString)
+
+            val trashDir = File(context.filesDir, "trash").apply { if (!exists()) mkdirs() }
+            val uniqueName = "${System.currentTimeMillis()}_${file.name}"
+            val trashedTargetFile = File(trashDir, uniqueName)
+
+            val localFile = File(file.path)
+            var moved = false
+            if (localFile.exists()) {
+                moved = localFile.renameTo(trashedTargetFile)
+                if (!moved) {
+                    try {
+                        localFile.inputStream().use { input ->
+                            trashedTargetFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        localFile.delete()
+                        moved = true
+                    } catch (t: Throwable) {
+                        moved = false
+                    }
+                }
+            } else {
+                try {
+                    val uri = Uri.parse(file.uriString)
+                    val input = context.contentResolver.openInputStream(uri)
+                    if (input != null) {
+                        input.use { inStream ->
+                            trashedTargetFile.outputStream().use { outStream ->
+                                inStream.copyTo(outStream)
+                            }
+                        }
+                        try { context.contentResolver.delete(uri, null, null) } catch (ignored: Throwable) {}
+                        moved = true
+                    }
+                } catch (t: Throwable) {
+                    moved = false
+                }
+            }
+
+            if (moved && trashedFileDao != null) {
+                trashedFileDao.insertOrUpdate(
+                    TrashedFileEntity(
+                        uriString = file.uriString,
+                        originalPath = file.path,
+                        trashedPath = trashedTargetFile.absolutePath,
+                        name = file.name,
+                        sizeBytes = file.sizeBytes,
+                        formatName = file.format.name,
+                        trashedTimestamp = System.currentTimeMillis(),
+                        expiryTimestamp = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000L)
+                    )
+                )
+            }
+            refreshScan()
+            moved
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun restoreFromTrash(trashed: TrashedFileEntity): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val trashedFile = File(trashed.trashedPath)
+            if (!trashedFile.exists()) {
+                trashedFileDao?.deleteByUri(trashed.uriString)
+                return@withContext false
+            }
+
+            var destFile = File(trashed.originalPath)
+            if (destFile.parentFile == null || !destFile.parentFile!!.exists() || !destFile.parentFile!!.canWrite()) {
+                val docsDir = File(context.filesDir, "DocLite_Documents").apply { if (!exists()) mkdirs() }
+                destFile = File(docsDir, trashed.name)
+            }
+
+            var restored = trashedFile.renameTo(destFile)
+            if (!restored) {
+                try {
+                    trashedFile.inputStream().use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    trashedFile.delete()
+                    restored = true
+                } catch (t: Throwable) {
+                    restored = false
+                }
+            }
+
+            if (restored) {
+                trashedFileDao?.deleteByUri(trashed.uriString)
+                val newUri = Uri.fromFile(destFile).toString()
+                recentFileDao.insertOrUpdate(
+                    RecentFileEntity(
+                        uriString = newUri,
+                        name = trashed.name,
+                        path = destFile.absolutePath,
+                        sizeBytes = destFile.length(),
+                        formatName = trashed.formatName,
+                        lastOpenedTimestamp = System.currentTimeMillis()
+                    )
+                )
+                refreshScan()
+            }
+            restored
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun permanentlyDeleteTrashed(trashed: TrashedFileEntity): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val f = File(trashed.trashedPath)
+            if (f.exists()) f.delete()
+            trashedFileDao?.deleteByUri(trashed.uriString)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun emptyTrash(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val trashDir = File(context.filesDir, "trash")
+            if (trashDir.exists()) {
+                trashDir.listFiles()?.forEach { it.delete() }
+            }
+            trashedFileDao?.clearAll()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun purgeExpiredTrash(): Int = withContext(Dispatchers.IO) {
+        try {
+            val expired = trashedFileDao?.getExpiredFiles(System.currentTimeMillis()) ?: emptyList()
+            var purged = 0
+            for (t in expired) {
+                val f = File(t.trashedPath)
+                if (f.exists()) f.delete()
+                trashedFileDao?.deleteByUri(t.uriString)
+                purged++
+            }
+            purged
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     suspend fun deleteFile(file: DocumentFile): Boolean = withContext(Dispatchers.IO) {
+        moveToTrash(file)
+    }
+
+    suspend fun permanentlyDeleteFile(file: DocumentFile): Boolean = withContext(Dispatchers.IO) {
         try {
             recentFileDao.deleteByUri(file.uriString)
             favoriteFileDao.removeFavorite(file.uriString)
@@ -696,35 +862,6 @@ class FileRepository(
             }
         }
         count
-    }
-
-    suspend fun seedInitialSampleDocumentsIfNeeded() = withContext(Dispatchers.IO) {
-        val prefs = context.getSharedPreferences("DocLite_Prefs", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("samples_seeded", false)) {
-            val docsDir = File(context.filesDir, "DocLite_Documents")
-            if (!docsDir.exists()) docsDir.mkdirs()
-            
-            try {
-                // Seed Sample Word
-                createNewDocument("Project_Proposal_DocLite", DocumentFormat.WORD)
-            } catch (t: Throwable) {
-                android.util.Log.w("FileRepository", "Sample Word creation skipped: ${t.message}")
-            }
-            try {
-                // Seed Sample Excel
-                createNewDocument("Quarterly_Budget_Report", DocumentFormat.EXCEL)
-            } catch (t: Throwable) {
-                android.util.Log.w("FileRepository", "Sample Excel creation skipped: ${t.message}")
-            }
-            try {
-                // Seed Sample PowerPoint
-                createNewDocument("DocLite_Feature_Deck", DocumentFormat.POWERPOINT)
-            } catch (t: Throwable) {
-                android.util.Log.w("FileRepository", "Sample PowerPoint creation skipped: ${t.message}")
-            }
-
-            prefs.edit().putBoolean("samples_seeded", true).apply()
-        }
     }
 }
 

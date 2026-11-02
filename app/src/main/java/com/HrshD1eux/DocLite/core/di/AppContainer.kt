@@ -17,7 +17,8 @@ class AppContainer(private val context: Context) {
             context = context,
             recentFileDao = database.recentFileDao(),
             favoriteFileDao = database.favoriteFileDao(),
-            passwordProtectionDao = database.passwordProtectionDao()
+            passwordProtectionDao = database.passwordProtectionDao(),
+            trashedFileDao = database.trashedFileDao()
         )
     }
 

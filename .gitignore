@@ -66,3 +66,7 @@ captures/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local raw design assets (do not push to repository)
+/logo.png
+/logo.svg

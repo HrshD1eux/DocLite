@@ -95,6 +95,8 @@ fun HomeScreen(
     var selectedFileForPasswordSet by remember { mutableStateOf<DocumentFile?>(null) }
     var selectedFileForRename by remember { mutableStateOf<DocumentFile?>(null) }
     var renameInput by remember { mutableStateOf("") }
+    var fileToDelete by remember { mutableStateOf<DocumentFile?>(null) }
+    var infoFile by remember { mutableStateOf<DocumentFile?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -283,6 +285,42 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { selectedFileForRename = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (infoFile != null) {
+        com.HrshD1eux.DocLite.ui.components.FileInfoDialog(
+            file = infoFile!!,
+            onDismiss = { infoFile = null }
+        )
+    }
+
+    if (fileToDelete != null) {
+        val file = fileToDelete!!
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Move to Trash?") },
+            text = {
+                Text("Are you sure you want to delete '${file.name}'? It will stay safely in Trash for 30 days before being permanently deleted.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val target = fileToDelete
+                        fileToDelete = null
+                        if (target != null) {
+                            viewModel.deleteDocument(target)
+                        }
+                    }
+                ) {
+                    Text("Move to Trash", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -557,9 +595,10 @@ fun HomeScreen(
                                     renameInput = file.name.substringBeforeLast(".")
                                     selectedFileForRename = file
                                 },
-                                onDeleteClick = { viewModel.deleteDocument(file) },
+                                onDeleteClick = { fileToDelete = file },
                                 onShareClick = { shareFile(file) },
                                 onProtectClick = { selectedFileForPasswordSet = file },
+                                onInfoClick = { infoFile = file },
                                 onAnalyzeStatement = { onAnalyzeStatement(file) }
                             )
                         }
@@ -645,9 +684,10 @@ fun HomeScreen(
                                     renameInput = file.name.substringBeforeLast(".")
                                     selectedFileForRename = file
                                 },
-                                onDeleteClick = { viewModel.deleteDocument(file) },
+                                onDeleteClick = { fileToDelete = file },
                                 onShareClick = { shareFile(file) },
                                 onProtectClick = { selectedFileForPasswordSet = file },
+                                onInfoClick = { infoFile = file },
                                 onAnalyzeStatement = { onAnalyzeStatement(file) }
                             )
                         }

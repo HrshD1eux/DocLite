@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
@@ -41,7 +42,7 @@ import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Image
@@ -56,6 +57,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -394,124 +396,157 @@ fun WordEditorScreen(
                         )
                     }
 
-                    // Authentic Document Sheet Canvas
-                    Card(
+                    // Authentic Document Desk & A4 Paper Canvas (Never squeezed to mobile width)
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            .background(Color(0xFFEAEFF2))
+                            .horizontalScroll(rememberScrollState()),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        LazyColumn(
+                        Card(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 20.dp, vertical = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 80.dp)
+                                .width(640.dp)
+                                .padding(vertical = 16.dp, horizontal = 12.dp),
+                            shape = RoundedCornerShape(4.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                         ) {
-                            if (uiState.isEditing) {
-                                // EDIT MODE: Clean inline document editing
-                                val elements = uiState.document.bodyElements
-                                var pIndex = 0
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 44.dp, vertical = 36.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                contentPadding = PaddingValues(bottom = 80.dp)
+                            ) {
+                                if (uiState.isEditing) {
+                                    // EDIT MODE: Clean inline document editing
+                                    val elements = uiState.document.bodyElements
+                                    var pIndex = 0
 
-                                itemsIndexed(
-                                    items = elements,
-                                    key = { _, elem -> elem.id }
-                                ) { elemIndex, element ->
-                                    when (element) {
-                                        is WordBodyElement.ParagraphElement -> {
-                                            val currentPIndex = pIndex
-                                            pIndex++
-                                            val isFocused = uiState.activeElementIndex == elemIndex
+                                    itemsIndexed(
+                                        items = elements,
+                                        key = { _, elem -> elem.id }
+                                    ) { elemIndex, element ->
+                                        when (element) {
+                                            is WordBodyElement.PageBreakElement -> {
+                                                PageBreakCutDivider(
+                                                    pageNumber = element.pageNumber,
+                                                    isEditing = true,
+                                                    onDelete = { viewModel.deletePageBreak(elemIndex) }
+                                                )
+                                            }
 
-                                            EditableParagraphRow(
-                                                paragraph = element.paragraph,
-                                                elementIndex = elemIndex,
-                                                paragraphIndex = currentPIndex,
-                                                isFocused = isFocused,
-                                                onTextChange = { newText ->
-                                                    viewModel.updateParagraphText(currentPIndex, newText)
-                                                },
-                                                onFocus = {
-                                                    viewModel.setActiveElement(elemIndex)
-                                                },
-                                                onInsertBelow = {
-                                                    viewModel.insertParagraphAt(currentPIndex + 1)
-                                                },
-                                                onInsertTableBelow = {
-                                                    viewModel.insertTable(rows = 3, cols = 3, afterIndex = elemIndex)
-                                                },
-                                                onDuplicate = {
-                                                    viewModel.duplicateParagraph(elemIndex)
-                                                },
-                                                onDelete = {
-                                                    viewModel.deleteParagraph(currentPIndex)
-                                                },
-                                                canDelete = uiState.document.paragraphs.size > 1
-                                            )
-                                        }
+                                            is WordBodyElement.ParagraphElement -> {
+                                                val currentPIndex = pIndex
+                                                pIndex++
+                                                val isFocused = uiState.activeElementIndex == elemIndex
 
-                                        is WordBodyElement.TableElement -> {
-                                            InteractiveTableCard(
-                                                table = element.table,
-                                                isEditing = true,
-                                                onCellClick = { rIdx, cIdx, text ->
-                                                    editingCell = TableCellEditTarget(elemIndex, rIdx, cIdx, text)
-                                                    cellEditText = text
-                                                },
-                                                onAddRow = { viewModel.addTableRow(elemIndex) },
-                                                onDeleteRow = { rIdx -> viewModel.deleteTableRow(elemIndex, rIdx) }
-                                            )
-                                        }
+                                                if (element.paragraph.hasPageBreakBefore) {
+                                                    PageBreakCutDivider(pageNumber = 0, isEditing = true)
+                                                }
 
-                                        is WordBodyElement.ImageElement -> {
-                                            DocumentImageItem(element = element)
+                                                EditableParagraphRow(
+                                                    paragraph = element.paragraph,
+                                                    elementIndex = elemIndex,
+                                                    paragraphIndex = currentPIndex,
+                                                    isFocused = isFocused,
+                                                    onTextChange = { newText ->
+                                                        viewModel.updateParagraphText(currentPIndex, newText)
+                                                    },
+                                                    onFocus = {
+                                                        viewModel.setActiveElement(elemIndex)
+                                                    },
+                                                    onInsertBelow = {
+                                                        viewModel.insertParagraphAt(currentPIndex + 1)
+                                                    },
+                                                    onInsertTableBelow = {
+                                                        viewModel.insertTable(rows = 3, cols = 3, afterIndex = elemIndex)
+                                                    },
+                                                    onInsertPageBreakBelow = {
+                                                        viewModel.insertPageBreak(elemIndex)
+                                                    },
+                                                    onDuplicate = {
+                                                        viewModel.duplicateParagraph(elemIndex)
+                                                    },
+                                                    onDelete = {
+                                                        viewModel.deleteParagraph(currentPIndex)
+                                                    },
+                                                    canDelete = uiState.document.paragraphs.size > 1
+                                                )
+                                            }
+
+                                            is WordBodyElement.TableElement -> {
+                                                InteractiveTableCard(
+                                                    table = element.table,
+                                                    isEditing = true,
+                                                    onCellClick = { rIdx, cIdx, text ->
+                                                        editingCell = TableCellEditTarget(elemIndex, rIdx, cIdx, text)
+                                                        cellEditText = text
+                                                    },
+                                                    onAddRow = { viewModel.addTableRow(elemIndex) },
+                                                    onDeleteRow = { rIdx -> viewModel.deleteTableRow(elemIndex, rIdx) }
+                                                )
+                                            }
+
+                                            is WordBodyElement.ImageElement -> {
+                                                DocumentImageItem(element = element)
+                                            }
                                         }
                                     }
-                                }
 
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 16.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Button(
-                                            onClick = viewModel::addParagraph,
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                            ),
-                                            shape = RoundedCornerShape(20.dp)
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 16.dp),
+                                            contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Add Paragraph", style = MaterialTheme.typography.labelLarge)
+                                            Button(
+                                                onClick = viewModel::addParagraph,
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                ),
+                                                shape = RoundedCornerShape(20.dp)
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Add Paragraph", style = MaterialTheme.typography.labelLarge)
+                                            }
                                         }
                                     }
-                                }
-                            } else {
-                                // VIEW MODE: Crisp reading typography
-                                items(
-                                    items = uiState.document.bodyElements,
-                                    key = { it.id }
-                                ) { element ->
-                                    when (element) {
-                                        is WordBodyElement.ParagraphElement -> {
-                                            ViewModeParagraph(paragraph = element.paragraph)
-                                        }
+                                } else {
+                                    // VIEW MODE: Crisp reading typography
+                                    itemsIndexed(
+                                        items = uiState.document.bodyElements,
+                                        key = { _, it -> it.id }
+                                    ) { _, element ->
+                                        when (element) {
+                                            is WordBodyElement.PageBreakElement -> {
+                                                PageBreakCutDivider(
+                                                    pageNumber = element.pageNumber,
+                                                    isEditing = false
+                                                )
+                                            }
 
-                                        is WordBodyElement.TableElement -> {
-                                            InteractiveTableCard(
-                                                table = element.table,
-                                                isEditing = false
-                                            )
-                                        }
+                                            is WordBodyElement.ParagraphElement -> {
+                                                if (element.paragraph.hasPageBreakBefore) {
+                                                    PageBreakCutDivider(pageNumber = 0, isEditing = false)
+                                                }
+                                                ViewModeParagraph(paragraph = element.paragraph)
+                                            }
 
-                                        is WordBodyElement.ImageElement -> {
-                                            DocumentImageItem(element = element)
+                                            is WordBodyElement.TableElement -> {
+                                                InteractiveTableCard(
+                                                    table = element.table,
+                                                    isEditing = false
+                                                )
+                                            }
+
+                                            is WordBodyElement.ImageElement -> {
+                                                DocumentImageItem(element = element)
+                                            }
                                         }
                                     }
                                 }
@@ -643,7 +678,7 @@ private fun WordFormattingRibbon(
                 modifier = Modifier.height(32.dp)
             )
             FormattingToggleButton(
-                icon = Icons.Default.FormatListBulleted,
+                icon = Icons.AutoMirrored.Filled.FormatListBulleted,
                 label = "Bullet List",
                 isActive = uiState.isBullet,
                 onClick = viewModel::toggleBullet
@@ -739,6 +774,7 @@ private fun EditableParagraphRow(
     onFocus: () -> Unit,
     onInsertBelow: () -> Unit,
     onInsertTableBelow: () -> Unit,
+    onInsertPageBreakBelow: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     canDelete: Boolean
@@ -854,6 +890,14 @@ private fun EditableParagraphRow(
                     }
                 )
                 DropdownMenuItem(
+                    text = { Text("Insert Page Break Below") },
+                    leadingIcon = { Icon(Icons.Default.ContentCut, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onInsertPageBreakBelow()
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text("Duplicate") },
                     leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                     onClick = {
@@ -872,6 +916,72 @@ private fun EditableParagraphRow(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PageBreakCutDivider(
+    pageNumber: Int,
+    isEditing: Boolean = false,
+    onDelete: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HorizontalDivider(
+                modifier = Modifier.weight(1f),
+                color = Color(0xFF90A4AE),
+                thickness = 1.dp
+            )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFECEFF1),
+                border = BorderStroke(1.dp, Color(0xFFB0BEC5)),
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.ContentCut,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color(0xFF455A64)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (pageNumber > 0) "✂ Page Break • Page $pageNumber" else "✂ Page Break",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF37474F)
+                    )
+                    if (isEditing && onDelete != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Delete Page Break",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { onDelete() }
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(
+                modifier = Modifier.weight(1f),
+                color = Color(0xFF90A4AE),
+                thickness = 1.dp
+            )
         }
     }
 }
