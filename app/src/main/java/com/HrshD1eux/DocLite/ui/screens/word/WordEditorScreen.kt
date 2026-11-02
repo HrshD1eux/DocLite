@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -33,11 +35,13 @@ import androidx.compose.material.icons.automirrored.filled.FormatAlignRight
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.FormatBold
@@ -81,6 +85,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -133,6 +138,7 @@ fun WordEditorScreen(
     var renameInput by remember { mutableStateOf("") }
     var editingCell by remember { mutableStateOf<TableCellEditTarget?>(null) }
     var cellEditText by remember { mutableStateOf("") }
+    var fitToScreen by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(fileUri) {
         viewModel.loadDocument(fileUri)
@@ -379,12 +385,35 @@ fun WordEditorScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            val estReadTime = (uiState.document.wordCount / 200).coerceAtLeast(1)
-                            Text(
-                                text = "~$estReadTime min read",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val estReadTime = (uiState.document.wordCount / 200).coerceAtLeast(1)
+                                Text(
+                                    text = "~$estReadTime min read",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                FilterChip(
+                                    selected = fitToScreen,
+                                    onClick = { fitToScreen = !fitToScreen },
+                                    label = {
+                                        Text(
+                                            if (fitToScreen) "Fit Screen" else "A4 View",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (fitToScreen) Icons.Default.FitScreen else Icons.Default.AspectRatio,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    },
+                                    modifier = Modifier.height(28.dp)
+                                )
+                            }
                         }
                     }
 
@@ -396,157 +425,223 @@ fun WordEditorScreen(
                         )
                     }
 
-                    // Authentic Document Desk & A4 Paper Canvas (Never squeezed to mobile width)
-                    Box(
-                        modifier = Modifier
+                    // Paginated Document Canvas (Fit to Screen or A4 View)
+                    val pages = remember(uiState.document.bodyElements) {
+                        paginateDocumentElements(uiState.document.bodyElements)
+                    }
+
+                    val deskModifier = if (fitToScreen) {
+                        Modifier
                             .fillMaxSize()
-                            .background(Color(0xFFEAEFF2))
-                            .horizontalScroll(rememberScrollState()),
+                            .background(Color(0xFFE8EEF2))
+                    } else {
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFE8EEF2))
+                            .horizontalScroll(rememberScrollState())
+                    }
+
+                    Box(
+                        modifier = deskModifier,
                         contentAlignment = Alignment.TopCenter
                     ) {
-                        Card(
-                            modifier = Modifier
-                                .width(640.dp)
-                                .padding(vertical = 16.dp, horizontal = 12.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                        val columnModifier = if (fitToScreen) {
+                            Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp)
+                        } else {
+                            Modifier
+                                .width(620.dp)
+                                .padding(horizontal = 8.dp)
+                        }
+
+                        LazyColumn(
+                            modifier = columnModifier,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp)
                         ) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 44.dp, vertical = 36.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                contentPadding = PaddingValues(bottom = 80.dp)
-                            ) {
-                                if (uiState.isEditing) {
-                                    // EDIT MODE: Clean inline document editing
-                                    val elements = uiState.document.bodyElements
-                                    var pIndex = 0
-
-                                    itemsIndexed(
-                                        items = elements,
-                                        key = { _, elem -> elem.id }
-                                    ) { elemIndex, element ->
-                                        when (element) {
-                                            is WordBodyElement.PageBreakElement -> {
-                                                PageBreakCutDivider(
-                                                    pageNumber = element.pageNumber,
-                                                    isEditing = true,
-                                                    onDelete = { viewModel.deletePageBreak(elemIndex) }
-                                                )
-                                            }
-
-                                            is WordBodyElement.ParagraphElement -> {
-                                                val currentPIndex = pIndex
-                                                pIndex++
-                                                val isFocused = uiState.activeElementIndex == elemIndex
-
-                                                if (element.paragraph.hasPageBreakBefore) {
-                                                    PageBreakCutDivider(pageNumber = 0, isEditing = true)
-                                                }
-
-                                                EditableParagraphRow(
-                                                    paragraph = element.paragraph,
-                                                    elementIndex = elemIndex,
-                                                    paragraphIndex = currentPIndex,
-                                                    isFocused = isFocused,
-                                                    onTextChange = { newText ->
-                                                        viewModel.updateParagraphText(currentPIndex, newText)
-                                                    },
-                                                    onFocus = {
-                                                        viewModel.setActiveElement(elemIndex)
-                                                    },
-                                                    onInsertBelow = {
-                                                        viewModel.insertParagraphAt(currentPIndex + 1)
-                                                    },
-                                                    onInsertTableBelow = {
-                                                        viewModel.insertTable(rows = 3, cols = 3, afterIndex = elemIndex)
-                                                    },
-                                                    onInsertPageBreakBelow = {
-                                                        viewModel.insertPageBreak(elemIndex)
-                                                    },
-                                                    onDuplicate = {
-                                                        viewModel.duplicateParagraph(elemIndex)
-                                                    },
-                                                    onDelete = {
-                                                        viewModel.deleteParagraph(currentPIndex)
-                                                    },
-                                                    canDelete = uiState.document.paragraphs.size > 1
-                                                )
-                                            }
-
-                                            is WordBodyElement.TableElement -> {
-                                                InteractiveTableCard(
-                                                    table = element.table,
-                                                    isEditing = true,
-                                                    onCellClick = { rIdx, cIdx, text ->
-                                                        editingCell = TableCellEditTarget(elemIndex, rIdx, cIdx, text)
-                                                        cellEditText = text
-                                                    },
-                                                    onAddRow = { viewModel.addTableRow(elemIndex) },
-                                                    onDeleteRow = { rIdx -> viewModel.deleteTableRow(elemIndex, rIdx) }
-                                                )
-                                            }
-
-                                            is WordBodyElement.ImageElement -> {
-                                                DocumentImageItem(element = element)
-                                            }
-                                        }
-                                    }
-
-                                    item {
-                                        Box(
+                            items(
+                                items = pages,
+                                key = { page -> "page_${page.pageNumber}" }
+                            ) { page ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(4.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                    border = BorderStroke(0.5.dp, Color(0xFFD0D7DE))
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                horizontal = if (fitToScreen) 16.dp else 36.dp,
+                                                vertical = 20.dp
+                                            )
+                                    ) {
+                                        // Header
+                                        Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(top = 16.dp),
+                                                .padding(bottom = 12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = uiState.document.title.removeSuffix(".docx").removeSuffix(".doc"),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.Gray.copy(alpha = 0.7f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            Text(
+                                                text = "Page ${page.pageNumber} of ${pages.size}",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                                color = Color.Gray.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(bottom = 14.dp),
+                                            thickness = 0.5.dp,
+                                            color = Color.LightGray.copy(alpha = 0.35f)
+                                        )
+
+                                        // Page Elements
+                                        for (indexedElem in page.elements) {
+                                            val elemIndex = indexedElem.globalIndex
+                                            val currentPIndex = indexedElem.paragraphIndex
+                                            val element = indexedElem.element
+
+                                            if (uiState.isEditing) {
+                                                when (element) {
+                                                    is WordBodyElement.PageBreakElement -> {
+                                                        PageBreakCutDivider(
+                                                            pageNumber = page.pageNumber,
+                                                            isEditing = true,
+                                                            onDelete = { viewModel.deletePageBreak(elemIndex) }
+                                                        )
+                                                    }
+                                                    is WordBodyElement.ParagraphElement -> {
+                                                        val isFocused = uiState.activeElementIndex == elemIndex
+                                                        if (element.paragraph.hasPageBreakBefore) {
+                                                            PageBreakCutDivider(pageNumber = 0, isEditing = true)
+                                                        }
+                                                        EditableParagraphRow(
+                                                            paragraph = element.paragraph,
+                                                            elementIndex = elemIndex,
+                                                            paragraphIndex = currentPIndex,
+                                                            isFocused = isFocused,
+                                                            onTextChange = { newText ->
+                                                                viewModel.updateParagraphText(currentPIndex, newText)
+                                                            },
+                                                            onFocus = {
+                                                                viewModel.setActiveElement(elemIndex)
+                                                            },
+                                                            onInsertBelow = {
+                                                                viewModel.insertParagraphAt(currentPIndex + 1)
+                                                            },
+                                                            onInsertTableBelow = {
+                                                                viewModel.insertTable(rows = 3, cols = 3, afterIndex = elemIndex)
+                                                            },
+                                                            onInsertPageBreakBelow = {
+                                                                viewModel.insertPageBreak(elemIndex)
+                                                            },
+                                                            onDuplicate = {
+                                                                viewModel.duplicateParagraph(elemIndex)
+                                                            },
+                                                            onDelete = {
+                                                                viewModel.deleteParagraph(currentPIndex)
+                                                            },
+                                                            canDelete = uiState.document.paragraphs.size > 1
+                                                        )
+                                                    }
+                                                    is WordBodyElement.TableElement -> {
+                                                        InteractiveTableCard(
+                                                            table = element.table,
+                                                            isEditing = true,
+                                                            fitToScreen = fitToScreen,
+                                                            onCellClick = { rIdx, cIdx, text ->
+                                                                editingCell = TableCellEditTarget(elemIndex, rIdx, cIdx, text)
+                                                                cellEditText = text
+                                                            },
+                                                            onAddRow = { viewModel.addTableRow(elemIndex) },
+                                                            onDeleteRow = { rIdx -> viewModel.deleteTableRow(elemIndex, rIdx) }
+                                                        )
+                                                    }
+                                                    is WordBodyElement.ImageElement -> {
+                                                        DocumentImageItem(element = element, fitToScreen = fitToScreen)
+                                                    }
+                                                }
+                                            } else {
+                                                when (element) {
+                                                    is WordBodyElement.PageBreakElement -> {
+                                                        PageBreakCutDivider(
+                                                            pageNumber = page.pageNumber,
+                                                            isEditing = false
+                                                        )
+                                                    }
+                                                    is WordBodyElement.ParagraphElement -> {
+                                                        if (element.paragraph.hasPageBreakBefore) {
+                                                            PageBreakCutDivider(pageNumber = 0, isEditing = false)
+                                                        }
+                                                        ViewModeParagraph(paragraph = element.paragraph)
+                                                    }
+                                                    is WordBodyElement.TableElement -> {
+                                                        InteractiveTableCard(
+                                                            table = element.table,
+                                                            isEditing = false,
+                                                            fitToScreen = fitToScreen
+                                                        )
+                                                    }
+                                                    is WordBodyElement.ImageElement -> {
+                                                        DocumentImageItem(element = element, fitToScreen = fitToScreen)
+                                                    }
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                        }
+
+                                        // Page Footer
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(bottom = 8.dp),
+                                            thickness = 0.5.dp,
+                                            color = Color.LightGray.copy(alpha = 0.25f)
+                                        )
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Button(
-                                                onClick = viewModel::addParagraph,
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                                ),
-                                                shape = RoundedCornerShape(20.dp)
-                                            ) {
-                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Add Paragraph", style = MaterialTheme.typography.labelLarge)
-                                            }
+                                            Text(
+                                                text = "${page.pageNumber}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.Gray.copy(alpha = 0.6f)
+                                            )
                                         }
                                     }
-                                } else {
-                                    // VIEW MODE: Crisp reading typography
-                                    itemsIndexed(
-                                        items = uiState.document.bodyElements,
-                                        key = { _, it -> it.id }
-                                    ) { _, element ->
-                                        when (element) {
-                                            is WordBodyElement.PageBreakElement -> {
-                                                PageBreakCutDivider(
-                                                    pageNumber = element.pageNumber,
-                                                    isEditing = false
-                                                )
-                                            }
+                                }
+                            }
 
-                                            is WordBodyElement.ParagraphElement -> {
-                                                if (element.paragraph.hasPageBreakBefore) {
-                                                    PageBreakCutDivider(pageNumber = 0, isEditing = false)
-                                                }
-                                                ViewModeParagraph(paragraph = element.paragraph)
-                                            }
-
-                                            is WordBodyElement.TableElement -> {
-                                                InteractiveTableCard(
-                                                    table = element.table,
-                                                    isEditing = false
-                                                )
-                                            }
-
-                                            is WordBodyElement.ImageElement -> {
-                                                DocumentImageItem(element = element)
-                                            }
+                            if (uiState.isEditing) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Button(
+                                            onClick = viewModel::addParagraph,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                            ),
+                                            shape = RoundedCornerShape(20.dp)
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Add Paragraph", style = MaterialTheme.typography.labelLarge)
                                         }
                                     }
                                 }
@@ -1028,66 +1123,106 @@ private fun ViewModeParagraph(paragraph: Paragraph) {
 private fun InteractiveTableCard(
     table: WordTable,
     isEditing: Boolean,
+    fitToScreen: Boolean = true,
     onCellClick: ((rowIndex: Int, colIndex: Int, text: String) -> Unit)? = null,
     onAddRow: (() -> Unit)? = null,
     onDeleteRow: ((rowIndex: Int) -> Unit)? = null
 ) {
+    if (table.rows.isEmpty()) return
+
+    val numCols = table.rows.maxOfOrNull { it.cells.size } ?: 0
+    val needsHorizontalScroll = numCols > 3 || !fitToScreen
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 6.dp),
         shape = RoundedCornerShape(6.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(1.dp, Color(0xFFCFD8DC)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            table.rows.forEachIndexed { rIdx, row ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (rIdx == 0) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
-                            else Modifier
-                        ),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    row.cells.forEachIndexed { cIdx, cell ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                                .then(
-                                    if (isEditing && onCellClick != null) {
-                                        Modifier.clickable { onCellClick(rIdx, cIdx, cell.text) }
-                                    } else Modifier
-                                )
-                                .padding(horizontal = 8.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = cell.text.ifEmpty { if (isEditing) "—" else "" },
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = if (cell.isHeader) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = if (cell.text.isEmpty() && isEditing) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
+            val tableContentModifier = if (needsHorizontalScroll) {
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+            } else {
+                Modifier.fillMaxWidth()
+            }
 
-                    if (isEditing && onDeleteRow != null && table.rows.size > 1 && rIdx > 0) {
-                        IconButton(
-                            onClick = { onDeleteRow(rIdx) },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Delete Row",
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+            Column(modifier = tableContentModifier) {
+                table.rows.forEachIndexed { rIdx, row ->
+                    val isHeaderRow = rIdx == 0
+                    Row(
+                        modifier = Modifier
+                            .then(
+                                if (needsHorizontalScroll) Modifier.widthIn(min = (numCols * 110).dp)
+                                else Modifier.fillMaxWidth()
                             )
+                            .then(
+                                if (isHeaderRow) Modifier.background(Color(0xFFF1F5F9))
+                                else if (rIdx % 2 == 1) Modifier.background(Color(0xFFFAFAFA))
+                                else Modifier.background(Color.White)
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        row.cells.forEachIndexed { cIdx, cell ->
+                            val cellModifier = if (needsHorizontalScroll) {
+                                Modifier
+                                    .widthIn(min = 100.dp, max = 240.dp)
+                                    .border(0.5.dp, Color(0xFFE2E8F0))
+                            } else {
+                                Modifier
+                                    .weight(1f)
+                                    .border(0.5.dp, Color(0xFFE2E8F0))
+                            }
+
+                            Box(
+                                modifier = cellModifier
+                                    .then(
+                                        if (isEditing && onCellClick != null) {
+                                            Modifier.clickable { onCellClick(rIdx, cIdx, cell.text) }
+                                        } else Modifier
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = cell.text.ifEmpty { if (isEditing) "—" else "" },
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = if (cell.isHeader || isHeaderRow) FontWeight.SemiBold else FontWeight.Normal,
+                                        fontSize = if (cell.isHeader || isHeaderRow) 13.sp else 12.sp
+                                    ),
+                                    color = if (cell.text.isEmpty() && isEditing) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    else if (isHeaderRow) Color(0xFF1E293B)
+                                    else Color(0xFF334155)
+                                )
+                            }
+                        }
+
+                        if (isEditing && onDeleteRow != null && table.rows.size > 1 && rIdx > 0) {
+                            IconButton(
+                                onClick = { onDeleteRow(rIdx) },
+                                modifier = Modifier.size(28.dp).padding(2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Delete Row",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                                )
+                            }
                         }
                     }
                 }
+            }
+
+            if (needsHorizontalScroll && numCols > 3) {
+                Text(
+                    text = "◀ Swipe table horizontally to see all $numCols columns ▶",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
             }
 
             if (isEditing && onAddRow != null) {
@@ -1111,31 +1246,66 @@ private fun InteractiveTableCard(
 }
 
 @Composable
-private fun DocumentImageItem(element: WordBodyElement.ImageElement) {
+private fun DocumentImageItem(
+    element: WordBodyElement.ImageElement,
+    fitToScreen: Boolean = true
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, Color(0xFFCFD8DC)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(element.imageUri)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = element.caption ?: "Embedded Document Image",
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .height(element.heightDp.dp)
-                    .fillMaxWidth(),
-                contentScale = ContentScale.Fit
-            )
+            val context = LocalContext.current
+            var isImageError by remember { mutableStateOf(false) }
+
+            if (isImageError) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(Color(0xFFF1F5F9), RoundedCornerShape(6.dp))
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = "Image Error",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Embedded Image (${element.widthDp} × ${element.heightDp} dp)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(element.imageUri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = element.caption ?: "Embedded Document Image",
+                    onError = { isImageError = true },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp, max = 380.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+
             if (!element.caption.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -1146,4 +1316,98 @@ private fun DocumentImageItem(element: WordBodyElement.ImageElement) {
             }
         }
     }
+}
+
+data class DocumentPage(
+    val pageNumber: Int,
+    val elements: List<IndexedDocElement>
+)
+
+data class IndexedDocElement(
+    val globalIndex: Int,
+    val paragraphIndex: Int,
+    val element: WordBodyElement
+)
+
+private fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List<DocumentPage> {
+    if (bodyElements.isEmpty()) {
+        return listOf(
+            DocumentPage(
+                pageNumber = 1,
+                elements = listOf(
+                    IndexedDocElement(
+                        globalIndex = 0,
+                        paragraphIndex = 0,
+                        element = WordBodyElement.ParagraphElement(Paragraph())
+                    )
+                )
+            )
+        )
+    }
+
+    val pages = mutableListOf<DocumentPage>()
+    val currentElements = mutableListOf<IndexedDocElement>()
+    var pIndex = 0
+    var pageCounter = 1
+    var accumulatedWeight = 0
+    val maxWeightPerPage = 420 // Word count / visual weight budget per page
+
+    for (elemIndex in bodyElements.indices) {
+        val element = bodyElements[elemIndex]
+        val currentPIndex = if (element is WordBodyElement.ParagraphElement) pIndex++ else -1
+
+        // Explicit Page Break element
+        if (element is WordBodyElement.PageBreakElement) {
+            if (currentElements.isNotEmpty()) {
+                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+                currentElements.clear()
+                accumulatedWeight = 0
+            }
+            currentElements.add(IndexedDocElement(elemIndex, currentPIndex, element))
+            pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+            currentElements.clear()
+            accumulatedWeight = 0
+            continue
+        }
+
+        // Paragraph with hasPageBreakBefore
+        if (element is WordBodyElement.ParagraphElement && element.paragraph.hasPageBreakBefore) {
+            if (currentElements.isNotEmpty()) {
+                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+                currentElements.clear()
+                accumulatedWeight = 0
+            }
+        }
+
+        // Weight estimation
+        val elemWeight = when (element) {
+            is WordBodyElement.ParagraphElement -> {
+                val words = element.paragraph.runs.sumOf { it.text.split("\\s+".toRegex()).count { w -> w.isNotBlank() } }
+                val lines = element.paragraph.runs.sumOf { it.text.count { c -> c == '\n' } } + 1
+                (words + lines * 15).coerceAtLeast(15)
+            }
+            is WordBodyElement.TableElement -> {
+                val cellCount = element.table.rows.sumOf { it.cells.size }
+                (cellCount * 12 + 40).coerceAtLeast(40)
+            }
+            is WordBodyElement.ImageElement -> 120
+            is WordBodyElement.PageBreakElement -> 0
+        }
+
+        // Natural page break if capacity reached
+        if (currentElements.isNotEmpty() && (accumulatedWeight + elemWeight > maxWeightPerPage)) {
+            pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+            currentElements.clear()
+            accumulatedWeight = 0
+        }
+
+        currentElements.add(IndexedDocElement(elemIndex, currentPIndex, element))
+        accumulatedWeight += elemWeight
+    }
+
+    if (currentElements.isNotEmpty() || pages.isEmpty()) {
+        pages.add(DocumentPage(pageCounter, currentElements.toList()))
+    }
+
+    return pages
 }

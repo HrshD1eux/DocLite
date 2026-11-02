@@ -229,6 +229,30 @@ class WordEngine(private val context: Context) {
                 var totalWords = 0
                 var totalChars = 0
 
+                // Extract embedded pictures from legacy doc if any
+                try {
+                    val pictures = hwpf.picturesTable?.allPictures
+                    if (!pictures.isNullOrEmpty()) {
+                        val mediaCacheDir = File(context.cacheDir, "word_media_legacy_${System.currentTimeMillis()}").apply { mkdirs() }
+                        for (pic in pictures) {
+                            try {
+                                val ext = pic.suggestFileExtension() ?: "png"
+                                val picFile = File(mediaCacheDir, "pic_${pic.hashCode()}.$ext")
+                                picFile.outputStream().use { pic.writeImageContent(it) }
+                                bodyElements.add(
+                                    WordBodyElement.ImageElement(
+                                        imageUri = Uri.fromFile(picFile).toString(),
+                                        widthDp = 300,
+                                        heightDp = 220
+                                    )
+                                )
+                            } catch (ignored: Throwable) {}
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Legacy doc picture extraction skipped: ${t.message}")
+                }
+
                 for (i in 0 until numParas) {
                     val p = range.getParagraph(i)
                     val rawText = p.text().trimEnd('\r', '\n', '\u0007', '\u000c')
@@ -408,7 +432,7 @@ class WordEngine(private val context: Context) {
         if (relsEntry != null) {
             try {
                 zipFile.getInputStream(relsEntry).use { relsStream ->
-                    val relsFactory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }
+                    val relsFactory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = false }
                     val relsParser = relsFactory.newPullParser()
                     relsParser.setInput(relsStream, "UTF-8")
                     var relEvent = relsParser.eventType
@@ -416,14 +440,23 @@ class WordEngine(private val context: Context) {
                         if (relEvent == XmlPullParser.START_TAG) {
                             val tag = relsParser.name?.substringAfterLast(':') ?: ""
                             if (tag.equals("Relationship", ignoreCase = true)) {
-                                val rId = relsParser.getAttributeValue(null, "Id")
-                                val type = relsParser.getAttributeValue(null, "Type") ?: ""
-                                val target = relsParser.getAttributeValue(null, "Target") ?: ""
-                                if (type.contains("image", ignoreCase = true) && rId != null && target.isNotBlank()) {
-                                    val normalizedPath = if (target.startsWith("media/")) "word/$target"
-                                    else if (target.startsWith("/word/")) target.removePrefix("/")
-                                    else if (!target.startsWith("word/")) "word/$target"
-                                    else target
+                                var rId: String? = null
+                                var type = ""
+                                var target = ""
+                                for (i in 0 until relsParser.attributeCount) {
+                                    val attrName = relsParser.getAttributeName(i).substringAfterLast(':')
+                                    val attrVal = relsParser.getAttributeValue(i) ?: ""
+                                    if (attrName.equals("Id", ignoreCase = true)) rId = attrVal
+                                    else if (attrName.equals("Type", ignoreCase = true)) type = attrVal
+                                    else if (attrName.equals("Target", ignoreCase = true)) target = attrVal
+                                }
+                                if (type.contains("image", ignoreCase = true) && !rId.isNullOrBlank() && target.isNotBlank()) {
+                                    val normalizedPath = when {
+                                        target.contains("media/") -> "word/media/" + target.substringAfter("media/")
+                                        target.startsWith("/word/") -> target.removePrefix("/")
+                                        target.startsWith("word/") -> target
+                                        else -> "word/media/" + target.substringAfterLast('/')
+                                    }
                                     imageRelsMap[rId] = normalizedPath
                                 }
                             }
@@ -442,7 +475,9 @@ class WordEngine(private val context: Context) {
         imageRelsMap.forEach { (rId, zipEntryPath) ->
             val entry = zipFile.getEntry(zipEntryPath)
                 ?: zipFile.entries().asSequence().firstOrNull {
-                    it.name.replace('\\', '/').trimStart('/').equals(zipEntryPath, ignoreCase = true)
+                    val entryName = it.name.replace('\\', '/').trimStart('/')
+                    entryName.equals(zipEntryPath, ignoreCase = true) ||
+                    entryName.substringAfterLast('/').equals(zipEntryPath.substringAfterLast('/'), ignoreCase = true)
                 }
             if (entry != null) {
                 try {
@@ -453,11 +488,37 @@ class WordEngine(private val context: Context) {
                             inS.copyTo(outS)
                         }
                     }
-                    rIdToCachedUri[rId] = Uri.fromFile(cacheImgFile).toString()
+                    val uriStr = Uri.fromFile(cacheImgFile).toString()
+                    rIdToCachedUri[rId] = uriStr
+                    rIdToCachedUri[zipEntryPath.substringAfterLast('/')] = uriStr
+                    rIdToCachedUri[zipEntryPath.substringAfterLast('/').substringBeforeLast('.')] = uriStr
                 } catch (t: Throwable) {
                     Log.w(TAG, "Failed to cache media entry $zipEntryPath", t)
                 }
             }
+        }
+
+        // Direct scan of all zip entries for media files so no images are missed
+        try {
+            val allEntries = zipFile.entries().asSequence().toList()
+            for (ze in allEntries) {
+                val nName = ze.name.replace('\\', '/').trimStart('/')
+                if (nName.contains("media/", ignoreCase = true) && !ze.isDirectory) {
+                    val fName = nName.substringAfterLast('/')
+                    if (!rIdToCachedUri.containsKey(fName)) {
+                        val fileExt = fName.substringAfterLast('.', "png")
+                        val cacheImgFile = File(mediaCacheDir, "${UUID.randomUUID()}.$fileExt")
+                        zipFile.getInputStream(ze).use { inS ->
+                            cacheImgFile.outputStream().use { outS -> inS.copyTo(outS) }
+                        }
+                        val uriStr = Uri.fromFile(cacheImgFile).toString()
+                        rIdToCachedUri[fName] = uriStr
+                        rIdToCachedUri[fName.substringBeforeLast('.')] = uriStr
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Direct zip media scan exception", t)
         }
 
         val bodyElements = mutableListOf<WordBodyElement>()
@@ -499,6 +560,10 @@ class WordEngine(private val context: Context) {
         var fontColorHex = "#1C1B1F"
         var highlightColorHex: String? = null
         var insideTextTag = false
+        var insideDrawing = false
+        var currentDrawingBlipId: String? = null
+        var currentDrawingWidthDp = 280
+        var currentDrawingHeightDp = 200
 
         var pageNumberCounter = 1
 
@@ -682,64 +747,57 @@ class WordEngine(private val context: Context) {
                             }
                         }
                         "drawing", "pict" -> {
-                            val isDrawing = tag == "drawing"
-                            var blipId: String? = null
-                            var depth = 1
-                            var loopCount = 0
-                            while (depth > 0 && loopCount < 500 && parser.next() != XmlPullParser.END_DOCUMENT) {
-                                loopCount++
-                                if (parser.eventType == XmlPullParser.START_TAG) {
-                                    if (!parser.isEmptyElementTag) depth++
-                                    val innerTag = parser.name?.substringAfterLast(':') ?: ""
-                                    if (innerTag == "blip" || innerTag == "imagedata") {
-                                        for (i in 0 until parser.attributeCount) {
-                                            val attrName = parser.getAttributeName(i).substringAfterLast(':')
-                                            if (attrName == "embed" || attrName == "id") {
-                                                blipId = parser.getAttributeValue(i)
-                                                break
-                                            }
-                                        }
+                            insideDrawing = true
+                            currentDrawingBlipId = null
+                            currentDrawingWidthDp = 280
+                            currentDrawingHeightDp = 200
+                        }
+                        "blip", "imagedata" -> {
+                            for (i in 0 until parser.attributeCount) {
+                                val aName = parser.getAttributeName(i).substringAfterLast(':')
+                                if (aName.equals("embed", ignoreCase = true) || aName.equals("id", ignoreCase = true) || aName.equals("href", ignoreCase = true)) {
+                                    val valAttr = parser.getAttributeValue(i)
+                                    if (!valAttr.isNullOrBlank()) {
+                                        currentDrawingBlipId = valAttr
+                                        break
                                     }
-                                } else if (parser.eventType == XmlPullParser.END_TAG) {
-                                    depth--
                                 }
                             }
-
-                            if (blipId != null && rIdToCachedUri.containsKey(blipId)) {
-                                val rawXml = extractDrawingXml(docXmlContent, blipId, isDrawing)
-                                val cachedUri = rIdToCachedUri[blipId]!!
-                                bodyElements.add(
-                                    WordBodyElement.ImageElement(
-                                        imageUri = cachedUri,
-                                        rawDrawingXml = rawXml
-                                    )
-                                )
+                        }
+                        "extent" -> {
+                            for (i in 0 until parser.attributeCount) {
+                                val aName = parser.getAttributeName(i).substringAfterLast(':')
+                                val aVal = parser.getAttributeValue(i)
+                                if (aName.equals("cx", ignoreCase = true)) {
+                                    val emu = aVal?.toLongOrNull()
+                                    if (emu != null && emu > 0) currentDrawingWidthDp = (emu / 5715L).toInt().coerceIn(60, 360)
+                                } else if (aName.equals("cy", ignoreCase = true)) {
+                                    val emu = aVal?.toLongOrNull()
+                                    if (emu != null && emu > 0) currentDrawingHeightDp = (emu / 5715L).toInt().coerceIn(40, 420)
+                                }
                             }
                         }
                     }
                 }
                 XmlPullParser.TEXT -> {
-                    if (insideTextTag && insideRun) {
-                        val text = parser.text ?: ""
-                        if (text.isNotEmpty()) {
-                            if (insideTableCell) {
-                                if (currentCellText.isNotEmpty()) currentCellText.append(" ")
-                                currentCellText.append(text)
-                            } else {
-                                currentRuns.add(
-                                    TextRun(
-                                        text = text,
-                                        style = TextStyle(
-                                            isBold = isBold,
-                                            isItalic = isItalic,
-                                            isUnderline = isUnderline,
-                                            fontSizeSp = fontSizeSp,
-                                            fontColorHex = fontColorHex,
-                                            highlightColorHex = highlightColorHex
-                                        )
+                    val text = parser.text ?: ""
+                    if (text.isNotEmpty()) {
+                        if (insideTableCell) {
+                            currentCellText.append(text)
+                        } else if (insideTextTag && insideRun) {
+                            currentRuns.add(
+                                TextRun(
+                                    text = text,
+                                    style = TextStyle(
+                                        isBold = isBold,
+                                        isItalic = isItalic,
+                                        isUnderline = isUnderline,
+                                        fontSizeSp = fontSizeSp,
+                                        fontColorHex = fontColorHex,
+                                        highlightColorHex = highlightColorHex
                                     )
                                 )
-                            }
+                            )
                             charCount += text.length
                             wordCount += text.split("\\s+".toRegex()).count { it.isNotBlank() }
                         }
@@ -751,8 +809,31 @@ class WordEngine(private val context: Context) {
                         "pPr" -> insidePPr = false
                         "r" -> insideRun = false
                         "t" -> insideTextTag = false
+                        "drawing", "pict" -> {
+                            if (insideDrawing) {
+                                insideDrawing = false
+                                val blipId = currentDrawingBlipId
+                                if (blipId != null) {
+                                    val cachedUri = rIdToCachedUri[blipId]
+                                        ?: rIdToCachedUri[blipId.substringAfterLast('/')]
+                                        ?: rIdToCachedUri[blipId.substringBeforeLast('.')]
+                                        ?: rIdToCachedUri.values.firstOrNull()
+                                    if (cachedUri != null) {
+                                        val rawXml = extractDrawingXml(docXmlContent, blipId, tag == "drawing")
+                                        bodyElements.add(
+                                            WordBodyElement.ImageElement(
+                                                imageUri = cachedUri,
+                                                widthDp = currentDrawingWidthDp,
+                                                heightDp = currentDrawingHeightDp,
+                                                rawDrawingXml = rawXml
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         "p" -> {
-                            if (!insideTableCell) {
+                            if (!insideTableCell && !insideTable) {
                                 val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
                                 val paragraph = Paragraph(
                                     runs = runs,
@@ -767,18 +848,22 @@ class WordEngine(private val context: Context) {
                                     bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
                                 }
                                 bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
+                            } else if (insideTableCell) {
+                                if (currentCellText.isNotEmpty()) currentCellText.append("\n")
                             }
                             insideParagraph = false
                         }
                         "tc" -> {
                             if (insideTableRow) {
-                                currentCells.add(WordTableCell(text = currentCellText.toString(), isHeader = currentTableRows.isEmpty()))
+                                currentCells.add(WordTableCell(text = currentCellText.toString().trim(), isHeader = currentTableRows.isEmpty()))
                                 insideTableCell = false
                             }
                         }
                         "tr" -> {
                             if (insideTable) {
-                                currentTableRows.add(WordTableRow(cells = currentCells.toList()))
+                                if (currentCells.isNotEmpty()) {
+                                    currentTableRows.add(WordTableRow(cells = currentCells.toList()))
+                                }
                                 insideTableRow = false
                             }
                         }
@@ -810,21 +895,40 @@ class WordEngine(private val context: Context) {
     }
 
     private fun extractAndParseDocxFallback(docxFile: File, fileName: String, uriString: String): WordDocument {
+        val mediaCacheDir = File(context.cacheDir, "word_media_fallback_${System.currentTimeMillis()}").apply { mkdirs() }
+        val rIdToCachedUri = mutableMapOf<String, String>()
+        var docXmlContent: String? = null
+
         ZipInputStream(docxFile.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val normName = entry.name.replace('\\', '/').trimStart('/')
                 if (normName.contains("document", ignoreCase = true) && normName.endsWith(".xml", ignoreCase = true)) {
-                    val xmlContent = zis.bufferedReader(Charsets.UTF_8).readText().removePrefix("\uFEFF").trimStart()
-                    return parseDocxFallbackParser(xmlContent, fileName, uriString)
+                    docXmlContent = zis.bufferedReader(Charsets.UTF_8).readText().removePrefix("\uFEFF").trimStart()
+                } else if (normName.contains("media/", ignoreCase = true) && !entry.isDirectory) {
+                    try {
+                        val imgFile = File(mediaCacheDir, normName.substringAfterLast('/'))
+                        imgFile.outputStream().use { outS -> zis.copyTo(outS) }
+                        val uriStr = Uri.fromFile(imgFile).toString()
+                        rIdToCachedUri[normName.substringAfterLast('/')] = uriStr
+                        rIdToCachedUri[normName.substringAfterLast('/').substringBeforeLast('.')] = uriStr
+                    } catch (ignored: Throwable) {}
                 }
                 entry = zis.nextEntry
             }
         }
+        if (docXmlContent != null) {
+            return parseDocxFallbackParser(docXmlContent!!, fileName, uriString, rIdToCachedUri)
+        }
         throw IllegalArgumentException("No document XML found in archive $fileName")
     }
 
-    private fun parseDocxFallbackParser(docXmlContent: String, fileName: String, uriString: String): WordDocument {
+    private fun parseDocxFallbackParser(
+        docXmlContent: String,
+        fileName: String,
+        uriString: String,
+        rIdToCachedUri: Map<String, String> = emptyMap()
+    ): WordDocument {
         val bodyElements = mutableListOf<WordBodyElement>()
         var totalWords = 0
         var totalChars = 0
@@ -845,22 +949,98 @@ class WordEngine(private val context: Context) {
             var isUnderline = false
             var fontSize = 16f
             var fontColor = "#1C1B1F"
+            var highlightColor: String? = null
             val currentRuns = mutableListOf<TextRun>()
             var alignment = TextAlignment.LEFT
             var isHeading = false
             var headingLvl = 0
+            var hasPageBreakBefore = false
+
+            // Table parsing state
+            var insideTable = false
+            var insideTableRow = false
+            var insideTableCell = false
+            val currentTableRows = mutableListOf<WordTableRow>()
+            val currentCells = mutableListOf<WordTableCell>()
+            val currentCellText = StringBuilder()
+
+            // Drawing parsing state
+            var insideDrawing = false
+            var currentDrawingBlipId: String? = null
+            var currentDrawingWidthDp = 300
+            var currentDrawingHeightDp = 200
 
             while (event != XmlPullParser.END_DOCUMENT) {
                 when (event) {
                     XmlPullParser.START_TAG -> {
                         val name = parser.name?.substringAfterLast(':') ?: ""
                         when (name) {
+                            "tbl" -> {
+                                insideTable = true
+                                currentTableRows.clear()
+                            }
+                            "tr" -> {
+                                if (insideTable) {
+                                    insideTableRow = true
+                                    currentCells.clear()
+                                }
+                            }
+                            "tc" -> {
+                                if (insideTableRow) {
+                                    insideTableCell = true
+                                    currentCellText.setLength(0)
+                                }
+                            }
+                            "drawing", "pict" -> {
+                                insideDrawing = true
+                                currentDrawingBlipId = null
+                                currentDrawingWidthDp = 300
+                                currentDrawingHeightDp = 200
+                            }
+                            "blip", "imagedata" -> {
+                                if (insideDrawing) {
+                                    for (i in 0 until parser.attributeCount) {
+                                        val attr = parser.getAttributeName(i).substringAfterLast(':')
+                                        val v = parser.getAttributeValue(i)
+                                        if (attr.equals("embed", ignoreCase = true) ||
+                                            attr.equals("id", ignoreCase = true) ||
+                                            attr.equals("href", ignoreCase = true)
+                                        ) {
+                                            currentDrawingBlipId = v
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                            "extent" -> {
+                                if (insideDrawing) {
+                                    val cx = parser.getAttributeValue(null, "cx")?.toLongOrNull()
+                                    val cy = parser.getAttributeValue(null, "cy")?.toLongOrNull()
+                                    if (cx != null && cx > 0) {
+                                        currentDrawingWidthDp = (cx / 9525L).toInt().coerceIn(40, 800)
+                                    }
+                                    if (cy != null && cy > 0) {
+                                        currentDrawingHeightDp = (cy / 9525L).toInt().coerceIn(40, 1200)
+                                    }
+                                }
+                            }
                             "p" -> {
                                 insideP = true
                                 currentRuns.clear()
                                 alignment = TextAlignment.LEFT
                                 isHeading = false
                                 headingLvl = 0
+                                hasPageBreakBefore = false
+                            }
+                            "pageBreakBefore" -> {
+                                if (insideP) hasPageBreakBefore = true
+                            }
+                            "br" -> {
+                                val brType = parser.getAttributeValue(null, "type")
+                                    ?: getValAttr(parser)
+                                if (brType.equals("page", ignoreCase = true)) {
+                                    bodyElements.add(WordBodyElement.PageBreakElement())
+                                }
                             }
                             "jc" -> {
                                 val v = getValAttr(parser)?.lowercase()
@@ -885,6 +1065,7 @@ class WordEngine(private val context: Context) {
                                 isUnderline = false
                                 fontSize = if (isHeading) 20f else 16f
                                 fontColor = "#1C1B1F"
+                                highlightColor = null
                             }
                             "b" -> isBold = true
                             "i" -> isItalic = true
@@ -897,13 +1078,19 @@ class WordEngine(private val context: Context) {
                                 val c = getValAttr(parser)
                                 if (c != null && c != "auto") fontColor = if (c.startsWith("#")) c else "#$c"
                             }
+                            "highlight" -> {
+                                val h = getValAttr(parser)
+                                if (h != null && h != "none") highlightColor = "#FFFF00"
+                            }
                             "t" -> insideT = true
                         }
                     }
                     XmlPullParser.TEXT -> {
-                        if (insideP && insideR && insideT) {
-                            val txt = parser.text ?: ""
-                            if (txt.isNotEmpty()) {
+                        val txt = parser.text ?: ""
+                        if (txt.isNotEmpty()) {
+                            if (insideTableCell) {
+                                currentCellText.append(txt)
+                            } else if (insideP && insideR && insideT) {
                                 currentRuns.add(
                                     TextRun(
                                         text = txt,
@@ -912,7 +1099,8 @@ class WordEngine(private val context: Context) {
                                             isItalic = isItalic,
                                             isUnderline = isUnderline,
                                             fontSizeSp = fontSize,
-                                            fontColorHex = fontColor
+                                            fontColorHex = fontColor,
+                                            highlightColorHex = highlightColor
                                         )
                                     )
                                 )
@@ -926,19 +1114,66 @@ class WordEngine(private val context: Context) {
                         when (name) {
                             "t" -> insideT = false
                             "r" -> insideR = false
+                            "drawing", "pict" -> {
+                                if (insideDrawing) {
+                                    insideDrawing = false
+                                    val blipId = currentDrawingBlipId
+                                    val cachedUri = if (blipId != null) {
+                                        rIdToCachedUri[blipId]
+                                            ?: rIdToCachedUri[blipId.substringAfterLast('/')]
+                                            ?: rIdToCachedUri[blipId.substringBeforeLast('.')]
+                                            ?: rIdToCachedUri.values.firstOrNull()
+                                    } else rIdToCachedUri.values.firstOrNull()
+
+                                    if (cachedUri != null) {
+                                        bodyElements.add(
+                                            WordBodyElement.ImageElement(
+                                                imageUri = cachedUri,
+                                                widthDp = currentDrawingWidthDp,
+                                                heightDp = currentDrawingHeightDp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                             "p" -> {
-                                insideP = false
-                                val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
-                                bodyElements.add(
-                                    WordBodyElement.ParagraphElement(
-                                        Paragraph(
-                                            runs = runs,
-                                            alignment = alignment,
-                                            isHeader = isHeading,
-                                            headerLevel = headingLvl
+                                if (!insideTableCell && !insideTable) {
+                                    val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
+                                    bodyElements.add(
+                                        WordBodyElement.ParagraphElement(
+                                            Paragraph(
+                                                runs = runs,
+                                                alignment = alignment,
+                                                isHeader = isHeading,
+                                                headerLevel = headingLvl,
+                                                hasPageBreakBefore = hasPageBreakBefore
+                                            )
                                         )
                                     )
-                                )
+                                } else if (insideTableCell) {
+                                    if (currentCellText.isNotEmpty()) currentCellText.append("\n")
+                                }
+                                insideP = false
+                            }
+                            "tc" -> {
+                                if (insideTableRow) {
+                                    currentCells.add(WordTableCell(text = currentCellText.toString().trim(), isHeader = currentTableRows.isEmpty()))
+                                    insideTableCell = false
+                                }
+                            }
+                            "tr" -> {
+                                if (insideTable) {
+                                    if (currentCells.isNotEmpty()) {
+                                        currentTableRows.add(WordTableRow(cells = currentCells.toList()))
+                                    }
+                                    insideTableRow = false
+                                }
+                            }
+                            "tbl" -> {
+                                if (currentTableRows.isNotEmpty()) {
+                                    bodyElements.add(WordBodyElement.TableElement(WordTable(rows = currentTableRows.toList())))
+                                }
+                                insideTable = false
                             }
                         }
                     }
@@ -972,16 +1207,21 @@ class WordEngine(private val context: Context) {
             else -> s2
         }
         if (start == -1) return null
-        val selfClose = docXml.indexOf("/>", start)
-        val endTag1 = docXml.indexOf("</w:sectPr>", start)
-        val endTag2 = docXml.indexOf("</sectPr>", start)
+
+        val firstGt = docXml.indexOf('>', start)
+        if (firstGt == -1) return null
+
+        // Check if the sectPr tag itself is self-closing: <w:sectPr ... />
+        if (docXml[firstGt - 1] == '/') {
+            return docXml.substring(start, firstGt + 1)
+        }
+
+        val endTag1 = docXml.indexOf("</w:sectPr>", firstGt)
+        val endTag2 = docXml.indexOf("</sectPr>", firstGt)
         val fullEndTag = when {
             endTag1 != -1 && endTag2 != -1 -> minOf(endTag1, endTag2)
             endTag1 != -1 -> endTag1
             else -> endTag2
-        }
-        if (selfClose != -1 && (fullEndTag == -1 || selfClose < fullEndTag)) {
-            return docXml.substring(start, selfClose + 2)
         }
         if (fullEndTag != -1) {
             val closeLen = if (fullEndTag == endTag1) "</w:sectPr>".length else "</sectPr>".length
@@ -1347,7 +1587,10 @@ class WordEngine(private val context: Context) {
         sb.append("""xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" """)
         sb.append("""xmlns:w10="urn:schemas-microsoft-com:office:word" """)
         sb.append("""xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" """)
-        sb.append("""xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">""")
+        sb.append("""xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" """)
+        sb.append("""xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" """)
+        sb.append("""xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" """)
+        sb.append("""xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">""")
         sb.append("<w:body>")
 
         for (elem in document.bodyElements) {

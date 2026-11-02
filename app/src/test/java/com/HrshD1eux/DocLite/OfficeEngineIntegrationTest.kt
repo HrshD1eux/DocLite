@@ -15,6 +15,9 @@ import com.HrshD1eux.DocLite.models.TextRun
 import com.HrshD1eux.DocLite.models.TextStyle
 import com.HrshD1eux.DocLite.models.WordBodyElement
 import com.HrshD1eux.DocLite.models.WordDocument
+import com.HrshD1eux.DocLite.models.WordTable
+import com.HrshD1eux.DocLite.models.WordTableCell
+import com.HrshD1eux.DocLite.models.WordTableRow
 import com.HrshD1eux.DocLite.ui.screens.home.HomeViewModel
 import com.HrshD1eux.DocLite.ui.screens.home.HomeUiState
 import com.HrshD1eux.DocLite.repository.SettingsRepository
@@ -927,5 +930,182 @@ class OfficeEngineIntegrationTest {
 
         testDoc.delete()
         db.close()
+    }
+
+    @Test
+    fun wordEngine_parsesDocxWithTables_retainsStructureAndHeaders() = runTest {
+        val testFile = File(context.filesDir, "table_test.docx")
+        if (testFile.exists()) testFile.delete()
+
+        val docXml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Document with Table</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Header A</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Header B</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Header C</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Data 1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Data 2</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Data 3</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:r><w:t>After Table</w:t></w:r></w:p>
+  </w:body>
+</w:document>"""
+
+        java.util.zip.ZipOutputStream(testFile.outputStream()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+            zip.write(docXml.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+
+        val loaded = wordEngine.loadDocument(Uri.fromFile(testFile))
+        assertNotNull(loaded)
+        val tableElements = loaded.bodyElements.filterIsInstance<WordBodyElement.TableElement>()
+        assertEquals(1, tableElements.size)
+
+        val table = tableElements.first().table
+        assertEquals(2, table.rows.size)
+        assertEquals(3, table.rows[0].cells.size)
+        assertTrue(table.rows[0].cells[0].isHeader)
+        assertEquals("Header A", table.rows[0].cells[0].text)
+        assertEquals("Header B", table.rows[0].cells[1].text)
+        assertEquals("Header C", table.rows[0].cells[2].text)
+        assertFalse(table.rows[1].cells[0].isHeader)
+        assertEquals("Data 1", table.rows[1].cells[0].text)
+        assertEquals("Data 2", table.rows[1].cells[1].text)
+        assertEquals("Data 3", table.rows[1].cells[2].text)
+
+        testFile.delete()
+    }
+
+    @Test
+    fun wordEngine_parsesDocxWithEmbeddedImages_extractsAndMapsMedia() = runTest {
+        val testFile = File(context.filesDir, "image_test.docx")
+        if (testFile.exists()) testFile.delete()
+
+        val relsXml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+</Relationships>"""
+
+        val docXml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+            xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Before Image</w:t></w:r></w:p>
+    <w:p>
+      <w:r>
+        <w:drawing>
+          <wp:inline>
+            <wp:extent cx="1905000" cy="952500"/>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <a:blip r:embed="rId1"/>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>
+  </w:body>
+</w:document>"""
+
+        val fakeImageBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) // PNG magic
+
+        java.util.zip.ZipOutputStream(testFile.outputStream()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("word/_rels/document.xml.rels"))
+            zip.write(relsXml.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+
+            zip.putNextEntry(java.util.zip.ZipEntry("word/media/image1.png"))
+            zip.write(fakeImageBytes)
+            zip.closeEntry()
+
+            zip.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+            zip.write(docXml.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+
+        val loaded = wordEngine.loadDocument(Uri.fromFile(testFile))
+        assertNotNull(loaded)
+        val imageElements = loaded.bodyElements.filterIsInstance<WordBodyElement.ImageElement>()
+        assertEquals(1, imageElements.size)
+
+        val img = imageElements.first()
+        assertEquals(333, img.widthDp)
+        assertEquals(166, img.heightDp)
+        assertTrue(img.imageUri.isNotBlank())
+        val cachedFile = File(Uri.parse(img.imageUri).path ?: "")
+        assertTrue(cachedFile.exists())
+        assertEquals(fakeImageBytes.size.toLong(), cachedFile.length())
+
+        testFile.delete()
+    }
+
+    @Test
+    fun wordEngine_saveDocumentWithTableAndImage_reloadsWithoutCorruptedError() = runTest {
+        val testDoc = File(context.filesDir, "save_table_img_test.docx")
+        if (testDoc.exists()) testDoc.delete()
+        val uri = Uri.fromFile(testDoc)
+
+        val doc = WordDocument(
+            title = "save_table_img_test.docx",
+            fileUri = uri.toString(),
+            bodyElements = listOf(
+                WordBodyElement.ParagraphElement(
+                    Paragraph(runs = listOf(TextRun("Document Title", TextStyle(isBold = true, fontSizeSp = 22f))), isHeader = true, headerLevel = 1)
+                ),
+                WordBodyElement.TableElement(
+                    WordTable(
+                        rows = listOf(
+                            WordTableRow(listOf(WordTableCell("Item", isHeader = true), WordTableCell("Qty", isHeader = true), WordTableCell("Price", isHeader = true))),
+                            WordTableRow(listOf(WordTableCell("Apples"), WordTableCell("5"), WordTableCell("$10"))),
+                            WordTableRow(listOf(WordTableCell("Bananas"), WordTableCell("12"), WordTableCell("$15")))
+                        )
+                    )
+                ),
+                WordBodyElement.ParagraphElement(
+                    Paragraph(runs = listOf(TextRun("Summary paragraph following the table.")))
+                )
+            ),
+            sectPrXml = "<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr>"
+        )
+
+        // 1. Initial save
+        val save1 = wordEngine.saveDocument(uri, doc)
+        assertTrue(save1)
+
+        // 2. Load
+        val loaded1 = wordEngine.loadDocument(uri)
+        assertNotNull(loaded1)
+        assertEquals(1, loaded1.bodyElements.filterIsInstance<WordBodyElement.TableElement>().size)
+
+        // 3. Edit table in memory and re-save
+        val tableElem = loaded1.bodyElements.filterIsInstance<WordBodyElement.TableElement>().first()
+        val updatedRows = tableElem.table.rows.toMutableList()
+        updatedRows.add(WordTableRow(listOf(WordTableCell("Oranges"), WordTableCell("8"), WordTableCell("$12"))))
+        val updatedElements = loaded1.bodyElements.map {
+            if (it is WordBodyElement.TableElement) WordBodyElement.TableElement(WordTable(rows = updatedRows)) else it
+        }
+        val modifiedDoc = loaded1.copy(bodyElements = updatedElements)
+
+        val save2 = wordEngine.saveDocument(uri, modifiedDoc)
+        assertTrue(save2)
+
+        // 4. Reload to guarantee no XML corruption or sectPr issues
+        val loaded2 = wordEngine.loadDocument(uri)
+        assertNotNull("Re-saved document must load with zero corrupted errors", loaded2)
+        val loadedTable = loaded2.bodyElements.filterIsInstance<WordBodyElement.TableElement>().first().table
+        assertEquals(4, loadedTable.rows.size)
+        assertEquals("Oranges", loadedTable.rows[3].cells[0].text)
+
+        testDoc.delete()
     }
 }
