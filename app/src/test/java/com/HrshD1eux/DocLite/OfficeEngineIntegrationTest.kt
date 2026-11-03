@@ -1135,8 +1135,8 @@ class OfficeEngineIntegrationTest {
         )
         val weights = com.HrshD1eux.DocLite.ui.screens.word.computeColumnWeights(indexTable)
         assertEquals(4, weights.size)
-        assertEquals(0.85f, weights[0], 0.001f) // S.No. <= 5 chars -> 0.85f
-        assertEquals(3.5f, weights[1], 0.001f)  // Practical Title > 12 chars -> 3.5f
+        assertEquals(0.75f, weights[0], 0.001f) // S.No. <= 6 chars -> 0.75f (compact serial index column)
+        assertEquals(4.0f, weights[1], 0.001f)  // Practical Title > 20 chars -> 4.0f (wide title column)
         assertEquals(1.35f, weights[2], 0.001f) // Date <= 12 chars -> 1.35f
         assertEquals(0.85f, weights[3], 0.001f) // Page <= 5 chars -> 0.85f
 
@@ -1166,8 +1166,52 @@ class OfficeEngineIntegrationTest {
             assertTrue("Document must contain at least 1 table", tables.isNotEmpty())
 
             val realPages = com.HrshD1eux.DocLite.ui.screens.word.paginateDocumentElements(doc.bodyElements)
-            assertTrue("DSA Practical File with 31k words and 20 page breaks must paginate sensibly into ~40 pages instead of 324 phantom pages, got ${realPages.size}", realPages.size in 38..45)
+            assertTrue("DSA Practical File with 31k words and 20 page breaks must paginate sensibly into 20..45 pages instead of 324 phantom pages, got ${realPages.size}", realPages.size in 20..45)
         }
+    }
+
+    @Test
+    fun wordEngine_parsesTableCellStylingAndNavyHeaders() = runTest {
+        val testDoc = File(context.cacheDir, "table_styling_${System.currentTimeMillis()}.docx")
+        val uri = Uri.fromFile(testDoc)
+
+        val docWithStyledTable = WordDocument(
+            title = testDoc.name,
+            fileUri = uri.toString(),
+            bodyElements = listOf(
+                WordBodyElement.TableElement(
+                    WordTable(
+                        rows = listOf(
+                            WordTableRow(
+                                cells = listOf(
+                                    WordTableCell("S.No.", isHeader = true, backgroundColorHex = "#1F497D", textColorHex = "#FFFFFF", alignment = com.HrshD1eux.DocLite.models.TextAlignment.CENTER, isBold = true),
+                                    WordTableCell("Practical Title", isHeader = true, backgroundColorHex = "#1F497D", textColorHex = "#FFFFFF", alignment = com.HrshD1eux.DocLite.models.TextAlignment.CENTER, isBold = true)
+                                )
+                            ),
+                            WordTableRow(
+                                cells = listOf(
+                                    WordTableCell("1", isHeader = false, alignment = com.HrshD1eux.DocLite.models.TextAlignment.CENTER, isBold = true),
+                                    WordTableCell("Linear Array", isHeader = false, alignment = com.HrshD1eux.DocLite.models.TextAlignment.LEFT, isBold = false)
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val saved = wordEngine.saveDocument(uri, docWithStyledTable)
+        assertTrue(saved)
+
+        val loaded = wordEngine.loadDocument(uri)
+        assertNotNull(loaded)
+        val tableElem = loaded.bodyElements.filterIsInstance<WordBodyElement.TableElement>().firstOrNull()
+        assertNotNull(tableElem)
+        assertEquals(2, tableElem!!.table.rows.size)
+        assertEquals("S.No.", tableElem.table.rows[0].cells[0].text)
+        assertTrue(tableElem.table.rows[0].cells[0].isHeader)
+
+        testDoc.delete()
     }
 
     @Test

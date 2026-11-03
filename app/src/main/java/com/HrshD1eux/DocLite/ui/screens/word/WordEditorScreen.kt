@@ -378,6 +378,11 @@ fun WordEditorScreen(
                         .padding(innerPadding)
                         .background(MaterialTheme.colorScheme.surfaceContainerLowest)
                 ) {
+                    // Paginated Document Canvas Pages
+                    val pages = remember(uiState.document.bodyElements) {
+                        paginateDocumentElements(uiState.document.bodyElements)
+                    }
+
                     // Document Stats Ribbon
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -392,45 +397,40 @@ fun WordEditorScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Words: ${uiState.document.wordCount}  |  Characters: ${uiState.document.characterCount}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = "${pages.size} Pages",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val estReadTime = (uiState.document.wordCount / 200).coerceAtLeast(1)
-                                Text(
-                                    text = "~$estReadTime min read",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                FilterChip(
-                                    selected = a4PrintMode,
-                                    onClick = {
-                                        a4PrintMode = !a4PrintMode
-                                        if (!a4PrintMode) {
-                                            zoomScale = 1f
-                                            panOffset = Offset.Zero
-                                        }
-                                    },
-                                    label = {
-                                        Text(
-                                            if (a4PrintMode) "A4 Print View" else "Mobile Flow",
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (a4PrintMode) Icons.Default.AspectRatio else Icons.Default.FitScreen,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    },
-                                    modifier = Modifier.height(28.dp)
-                                )
-                            }
+                            FilterChip(
+                                selected = a4PrintMode,
+                                onClick = {
+                                    a4PrintMode = !a4PrintMode
+                                    if (!a4PrintMode) {
+                                        zoomScale = 1f
+                                        panOffset = Offset.Zero
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        if (a4PrintMode) "A4 Mode" else "Mobile Flow",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (a4PrintMode) Icons.Default.AspectRatio else Icons.Default.FitScreen,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                modifier = Modifier.height(32.dp)
+                            )
                         }
                     }
 
@@ -440,11 +440,6 @@ fun WordEditorScreen(
                             uiState = uiState,
                             viewModel = viewModel
                         )
-                    }
-
-                    // Paginated Document Canvas (A4 Print Mode with Pinch-To-Zoom or Mobile Flow)
-                    val pages = remember(uiState.document.bodyElements) {
-                        paginateDocumentElements(uiState.document.bodyElements)
                     }
 
                     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
@@ -518,8 +513,8 @@ fun WordEditorScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = if (a4PrintMode) 28.dp else 14.dp,
-                                                vertical = if (a4PrintMode) 24.dp else 16.dp
+                                                horizontal = if (a4PrintMode) 16.dp else 12.dp,
+                                                vertical = if (a4PrintMode) 20.dp else 14.dp
                                             )
                                     ) {
                                         // Header
@@ -1200,6 +1195,10 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
     val numCols = table.rows.maxOfOrNull { it.cells.size } ?: 0
     if (numCols == 0) return emptyList()
 
+    if (numCols == 2) {
+        return listOf(1f, 1f)
+    }
+
     val maxLens = IntArray(numCols) { 0 }
     for (row in table.rows) {
         row.cells.forEachIndexed { cIdx, cell ->
@@ -1215,9 +1214,11 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
     return List(numCols) { cIdx ->
         val maxLen = maxLens[cIdx]
         when {
-            maxLen <= 5 -> 0.85f  // S.No., #, Qty, Page: narrow
-            maxLen <= 12 -> 1.35f // Date, Code, Marks: medium
-            else -> 3.5f          // Practical Title, Description, Topic: wide
+            cIdx == 0 && maxLen <= 6 -> 0.75f // S.No., #, ID: compact (~8%)
+            maxLen <= 5 -> 0.85f              // Short codes/pages
+            maxLen <= 12 -> 1.35f             // Dates, short titles
+            maxLen <= 20 -> 1.75f             // Signatures
+            else -> 4.0f                      // Practical Title, Description, Topics: wide (~44%)
         }
     }
 }
@@ -1234,17 +1235,18 @@ private fun InteractiveTableCard(
     if (table.rows.isEmpty()) return
 
     val numCols = table.rows.maxOfOrNull { it.cells.size } ?: 0
-    // Tables up to 5 columns fit directly on screen in fitToScreen mode without horizontal scroll!
-    val needsHorizontalScroll = (!fitToScreen || numCols > 5)
+    // Tables up to 5 columns fit directly across the page without horizontal scrolling in both A4 and mobile view!
+    val needsHorizontalScroll = numCols > 5
     val colWeights = remember(table) { computeColumnWeights(table) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        shape = RoundedCornerShape(4.dp),
-        border = BorderStroke(0.5.dp, Color(0xFFCFD8DC)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(2.dp),
+        border = BorderStroke(0.5.dp, Color(0xFFCBD5E1)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             val tableContentModifier = if (needsHorizontalScroll) {
@@ -1263,16 +1265,47 @@ private fun InteractiveTableCard(
                             .then(
                                 if (needsHorizontalScroll) Modifier.widthIn(min = (numCols * 95).dp)
                                 else Modifier.fillMaxWidth()
-                            )
-                            .then(
-                                if (isHeaderRow) Modifier.background(Color(0xFFF1F5F9))
-                                else if (rIdx % 2 == 1) Modifier.background(Color(0xFFFAFAFA))
-                                else Modifier.background(Color.White)
                             ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         row.cells.forEachIndexed { cIdx, cell ->
                             val colWeight = colWeights.getOrElse(cIdx) { 1f }
+                            val isHeaderCell = cell.isHeader || isHeaderRow
+
+                            val cellBg = when {
+                                cell.backgroundColorHex != null -> {
+                                    try { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }
+                                    catch (e: Exception) { if (isHeaderCell) Color(0xFF1F497D) else Color.White }
+                                }
+                                isHeaderCell -> Color(0xFF1F497D) // Default header color: #1F497D Navy Blue!
+                                rIdx % 2 == 1 -> Color(0xFFF8FAFC)
+                                else -> Color.White
+                            }
+
+                            val cellFg = when {
+                                cell.textColorHex != null -> {
+                                    try { Color(android.graphics.Color.parseColor(cell.textColorHex)) }
+                                    catch (e: Exception) { if (isHeaderCell) Color.White else Color(0xFF1E293B) }
+                                }
+                                isHeaderCell -> Color.White
+                                else -> Color(0xFF1E293B)
+                            }
+
+                            val cellAlignment = when {
+                                cell.alignment != TextAlignment.LEFT -> cell.alignment.toComposeTextAlign()
+                                isHeaderCell -> TextAlign.Center
+                                cIdx == 0 -> TextAlign.Center
+                                cIdx == 2 || cIdx == 3 -> TextAlign.Center
+                                else -> TextAlign.Start
+                            }
+
+                            val cellWeight = when {
+                                isHeaderCell -> FontWeight.Bold
+                                cIdx == 0 -> FontWeight.Bold
+                                cell.isBold -> FontWeight.Bold
+                                else -> FontWeight.Normal
+                            }
+
                             val cellModifier = if (needsHorizontalScroll) {
                                 val minW = when {
                                     colWeight <= 1.0f -> 45.dp
@@ -1281,11 +1314,13 @@ private fun InteractiveTableCard(
                                 }
                                 Modifier
                                     .widthIn(min = minW, max = 260.dp)
-                                    .border(0.5.dp, Color(0xFFE2E8F0))
+                                    .border(0.5.dp, Color(0xFFCBD5E1))
+                                    .background(cellBg)
                             } else {
                                 Modifier
                                     .weight(colWeight)
-                                    .border(0.5.dp, Color(0xFFE2E8F0))
+                                    .border(0.5.dp, Color(0xFFCBD5E1))
+                                    .background(cellBg)
                             }
 
                             Box(
@@ -1295,18 +1330,27 @@ private fun InteractiveTableCard(
                                             Modifier.clickable { onCellClick(rIdx, cIdx, cell.text) }
                                         } else Modifier
                                     )
-                                    .padding(horizontal = 6.dp, vertical = 6.dp)
+                                    .padding(horizontal = 4.dp, vertical = if (isHeaderCell) 8.dp else 5.dp),
+                                contentAlignment = when (cellAlignment) {
+                                    TextAlign.Center -> Alignment.Center
+                                    TextAlign.Right, TextAlign.End -> Alignment.CenterEnd
+                                    else -> Alignment.CenterStart
+                                }
                             ) {
                                 Text(
                                     text = cell.text.ifEmpty { if (isEditing) "—" else "" },
                                     style = MaterialTheme.typography.bodySmall.copy(
-                                        fontWeight = if (cell.isHeader || isHeaderRow) FontWeight.SemiBold else FontWeight.Normal,
-                                        fontSize = if (cell.isHeader || isHeaderRow) 12.sp else 11.5.sp
+                                        fontWeight = cellWeight,
+                                        fontSize = if (isHeaderCell) 11.5.sp else 11.sp,
+                                        lineHeight = 15.sp
                                     ),
-                                    color = if (cell.text.isEmpty() && isEditing) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                    else if (isHeaderRow) Color(0xFF1E293B)
-                                    else Color(0xFF334155),
-                                    textAlign = if (colWeight <= 1.0f) TextAlign.Center else TextAlign.Start
+                                    color = if (cell.text.isEmpty() && isEditing) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    } else {
+                                        cellFg
+                                    },
+                                    textAlign = cellAlignment,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
@@ -1349,7 +1393,7 @@ private fun InteractiveTableCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Table Row", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text("Add Row", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }

@@ -48,7 +48,11 @@ data class TextRun(
 
 data class WordTableCell(
     val text: String,
-    val isHeader: Boolean = false
+    val isHeader: Boolean = false,
+    val backgroundColorHex: String? = null,
+    val textColorHex: String? = null,
+    val alignment: TextAlignment = TextAlignment.LEFT,
+    val isBold: Boolean = false
 )
 
 data class WordTableRow(

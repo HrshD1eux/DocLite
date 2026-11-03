@@ -607,6 +607,10 @@ class WordEngine(private val context: Context) {
         val currentTableRows = mutableListOf<WordTableRow>()
         val currentCells = mutableListOf<WordTableCell>()
         val currentCellText = StringBuilder()
+        var currentCellBgHex: String? = null
+        var currentCellColorHex: String? = null
+        var currentCellAlignment = TextAlignment.LEFT
+        var currentCellBold = false
 
         var insideParagraph = false
         var paraAlignment = TextAlignment.LEFT
@@ -657,6 +661,10 @@ class WordEngine(private val context: Context) {
                             if (insideTableRow) {
                                 insideTableCell = true
                                 currentCellText.clear()
+                                currentCellBgHex = null
+                                currentCellColorHex = null
+                                currentCellAlignment = TextAlignment.LEFT
+                                currentCellBold = false
                             }
                         }
                         "p" -> {
@@ -684,14 +692,18 @@ class WordEngine(private val context: Context) {
                             }
                         }
                         "jc" -> {
+                            val valAttr = getValAttr(parser)
+                            val align = when (valAttr?.lowercase()) {
+                                "center" -> TextAlignment.CENTER
+                                "right" -> TextAlignment.RIGHT
+                                "both" -> TextAlignment.JUSTIFY
+                                else -> TextAlignment.LEFT
+                            }
                             if (insideParagraph) {
-                                val valAttr = getValAttr(parser)
-                                paraAlignment = when (valAttr?.lowercase()) {
-                                    "center" -> TextAlignment.CENTER
-                                    "right" -> TextAlignment.RIGHT
-                                    "both" -> TextAlignment.JUSTIFY
-                                    else -> TextAlignment.LEFT
-                                }
+                                paraAlignment = align
+                            }
+                            if (insideTableCell) {
+                                currentCellAlignment = align
                             }
                         }
                         "pStyle" -> {
@@ -746,6 +758,7 @@ class WordEngine(private val context: Context) {
                             val valAttr = getValAttr(parser)
                             val bVal = valAttr == null || valAttr == "1" || valAttr.equals("true", ignoreCase = true)
                             if (insideRun) isBold = bVal else if (insidePPr) pDefaultBold = bVal
+                            if (insideTableCell && bVal) currentCellBold = true
                         }
                         "i", "iCs" -> {
                             val valAttr = getValAttr(parser)
@@ -765,11 +778,28 @@ class WordEngine(private val context: Context) {
                                 if (insideRun) fontSizeSp = sizeSp else if (insidePPr) pDefaultFontSize = sizeSp
                             }
                         }
+                        "shd" -> {
+                            var fillAttr: String? = null
+                            for (i in 0 until parser.attributeCount) {
+                                val aName = parser.getAttributeName(i).substringAfterLast(':')
+                                if (aName.equals("fill", ignoreCase = true)) {
+                                    fillAttr = parser.getAttributeValue(i)
+                                    break
+                                }
+                            }
+                            if (fillAttr != null && fillAttr != "auto" && fillAttr != "none") {
+                                val hex = if (fillAttr.startsWith("#")) fillAttr else "#$fillAttr"
+                                if (insideTableCell) {
+                                    currentCellBgHex = hex
+                                }
+                            }
+                        }
                         "color" -> {
                             val valAttr = getValAttr(parser)
                             if (valAttr != null && valAttr != "auto") {
                                 val colHex = if (valAttr.startsWith("#")) valAttr else "#$valAttr"
                                 if (insideRun) fontColorHex = colHex else if (insidePPr) pDefaultColor = colHex
+                                if (insideTableCell) currentCellColorHex = colHex
                             }
                         }
                         "highlight" -> {
@@ -787,8 +817,8 @@ class WordEngine(private val context: Context) {
                             }
                         }
                         "lastRenderedPageBreak" -> {
-                            pageNumberCounter++
-                            bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                            // Ignored: OpenXML lastRenderedPageBreak is a desktop rendering cache marker,
+                            // not an author-defined page break.
                         }
                         "t" -> {
                             insideTextTag = true
@@ -928,7 +958,17 @@ class WordEngine(private val context: Context) {
                         }
                         "tc" -> {
                             if (insideTableRow) {
-                                currentCells.add(WordTableCell(text = currentCellText.toString().trim(), isHeader = currentTableRows.isEmpty()))
+                                val isHeader = currentTableRows.isEmpty() || (currentCellBgHex != null && !currentCellBgHex.equals("#FFFFFF", ignoreCase = true))
+                                currentCells.add(
+                                    WordTableCell(
+                                        text = currentCellText.toString().trim(),
+                                        isHeader = isHeader,
+                                        backgroundColorHex = currentCellBgHex,
+                                        textColorHex = currentCellColorHex,
+                                        alignment = currentCellAlignment,
+                                        isBold = currentCellBold
+                                    )
+                                )
                                 insideTableCell = false
                             }
                         }
@@ -1039,6 +1079,10 @@ class WordEngine(private val context: Context) {
             val currentTableRows = mutableListOf<WordTableRow>()
             val currentCells = mutableListOf<WordTableCell>()
             val currentCellText = StringBuilder()
+            var currentCellBgHex: String? = null
+            var currentCellColorHex: String? = null
+            var currentCellAlignment = TextAlignment.LEFT
+            var currentCellBold = false
 
             // Drawing parsing state
             var insideDrawing = false
@@ -1065,6 +1109,10 @@ class WordEngine(private val context: Context) {
                                 if (insideTableRow) {
                                     insideTableCell = true
                                     currentCellText.setLength(0)
+                                    currentCellBgHex = null
+                                    currentCellColorHex = null
+                                    currentCellAlignment = TextAlignment.LEFT
+                                    currentCellBold = false
                                 }
                             }
                             "drawing", "pict" -> {
@@ -1126,6 +1174,7 @@ class WordEngine(private val context: Context) {
                                     "both" -> TextAlignment.JUSTIFY
                                     else -> TextAlignment.LEFT
                                 }
+                                if (insideTableCell) currentCellAlignment = alignment
                             }
                             "pStyle" -> {
                                 val v = getValAttr(parser)?.lowercase() ?: ""
@@ -1143,16 +1192,30 @@ class WordEngine(private val context: Context) {
                                 fontColor = "#1C1B1F"
                                 highlightColor = null
                             }
-                            "b" -> isBold = true
+                            "b" -> {
+                                isBold = true
+                                if (insideTableCell) currentCellBold = true
+                            }
                             "i" -> isItalic = true
                             "u" -> isUnderline = true
                             "sz" -> {
                                 val szVal = getValAttr(parser)?.toFloatOrNull()
                                 if (szVal != null && szVal > 0) fontSize = szVal / 2f
                             }
+                            "shd" -> {
+                                val fillAttr = parser.getAttributeValue(null, "fill") ?: getValAttr(parser)
+                                if (fillAttr != null && fillAttr != "auto" && fillAttr != "none") {
+                                    val hex = if (fillAttr.startsWith("#")) fillAttr else "#$fillAttr"
+                                    if (insideTableCell) currentCellBgHex = hex
+                                }
+                            }
                             "color" -> {
                                 val c = getValAttr(parser)
-                                if (c != null && c != "auto") fontColor = if (c.startsWith("#")) c else "#$c"
+                                if (c != null && c != "auto") {
+                                    val hex = if (c.startsWith("#")) c else "#$c"
+                                    fontColor = hex
+                                    if (insideTableCell) currentCellColorHex = hex
+                                }
                             }
                             "highlight" -> {
                                 val h = getValAttr(parser)
@@ -1233,7 +1296,17 @@ class WordEngine(private val context: Context) {
                             }
                             "tc" -> {
                                 if (insideTableRow) {
-                                    currentCells.add(WordTableCell(text = currentCellText.toString().trim(), isHeader = currentTableRows.isEmpty()))
+                                    val isHeader = currentTableRows.isEmpty() || (currentCellBgHex != null && !currentCellBgHex.equals("#FFFFFF", ignoreCase = true))
+                                    currentCells.add(
+                                        WordTableCell(
+                                            text = currentCellText.toString().trim(),
+                                            isHeader = isHeader,
+                                            backgroundColorHex = currentCellBgHex,
+                                            textColorHex = currentCellColorHex,
+                                            alignment = currentCellAlignment,
+                                            isBold = currentCellBold
+                                        )
+                                    )
                                     insideTableCell = false
                                 }
                             }
