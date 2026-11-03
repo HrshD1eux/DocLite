@@ -2,6 +2,9 @@ package com.HrshD1eux.DocLite.ui.screens.word
 
 import android.net.Uri
 import java.io.File
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -503,47 +506,22 @@ fun WordEditorScreen(
                                 key = { page -> "page_${page.pageNumber}" }
                             ) { page ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(3.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .then(if (a4PrintMode) Modifier.defaultMinSize(minHeight = 540.dp) else Modifier),
+                                    shape = RoundedCornerShape(2.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = if (a4PrintMode) 6.dp else 1.dp),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = if (a4PrintMode) 4.dp else 1.dp),
                                     border = BorderStroke(0.5.dp, Color(0xFFD0D7DE))
                                 ) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = if (a4PrintMode) 16.dp else 12.dp,
-                                                vertical = if (a4PrintMode) 20.dp else 14.dp
+                                                horizontal = if (a4PrintMode) 20.dp else 12.dp,
+                                                vertical = if (a4PrintMode) 24.dp else 14.dp
                                             )
                                     ) {
-                                        // Header
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(bottom = 12.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = uiState.document.title.removeSuffix(".docx").removeSuffix(".doc"),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Color.Gray.copy(alpha = 0.7f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            Text(
-                                                text = "Page ${page.pageNumber} of ${pages.size}",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                                                color = Color.Gray.copy(alpha = 0.8f)
-                                            )
-                                        }
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(bottom = 14.dp),
-                                            thickness = 0.5.dp,
-                                            color = Color.LightGray.copy(alpha = 0.35f)
-                                        )
 
                                         // Page Elements
                                         for (indexedElem in page.elements) {
@@ -1239,14 +1217,19 @@ private fun InteractiveTableCard(
     val needsHorizontalScroll = numCols > 5
     val colWeights = remember(table) { computeColumnWeights(table) }
 
-    Card(
-        modifier = Modifier
+    val tableCardModifier = if (table.hasBorders) {
+        Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(2.dp),
-        border = BorderStroke(0.5.dp, Color(0xFFCBD5E1)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            .padding(vertical = 4.dp)
+            .border(0.5.dp, Color(0xFFCBD5E1), RoundedCornerShape(2.dp))
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    }
+
+    Box(
+        modifier = tableCardModifier
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             val tableContentModifier = if (needsHorizontalScroll) {
@@ -1259,7 +1242,6 @@ private fun InteractiveTableCard(
 
             Column(modifier = tableContentModifier) {
                 table.rows.forEachIndexed { rIdx, row ->
-                    val isHeaderRow = rIdx == 0
                     Row(
                         modifier = Modifier
                             .then(
@@ -1270,41 +1252,40 @@ private fun InteractiveTableCard(
                     ) {
                         row.cells.forEachIndexed { cIdx, cell ->
                             val colWeight = colWeights.getOrElse(cIdx) { 1f }
-                            val isHeaderCell = cell.isHeader || isHeaderRow
+                            val isHeaderCell = cell.isHeader
 
                             val cellBg = when {
                                 cell.backgroundColorHex != null -> {
                                     try { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }
-                                    catch (e: Exception) { if (isHeaderCell) Color(0xFF1F497D) else Color.White }
+                                    catch (e: Exception) { Color.Transparent }
                                 }
-                                isHeaderCell -> Color(0xFF1F497D) // Default header color: #1F497D Navy Blue!
-                                rIdx % 2 == 1 -> Color(0xFFF8FAFC)
-                                else -> Color.White
+                                isHeaderCell -> Color(0xFF1F497D)
+                                else -> Color.Transparent
                             }
 
                             val cellFg = when {
                                 cell.textColorHex != null -> {
                                     try { Color(android.graphics.Color.parseColor(cell.textColorHex)) }
-                                    catch (e: Exception) { if (isHeaderCell) Color.White else Color(0xFF1E293B) }
+                                    catch (e: Exception) { Color(0xFF1E293B) }
                                 }
-                                isHeaderCell -> Color.White
+                                cellBg != Color.Transparent && ColorUtils.calculateLuminance(cellBg.toArgb()) < 0.45 -> {
+                                    Color.White
+                                }
                                 else -> Color(0xFF1E293B)
                             }
 
                             val cellAlignment = when {
                                 cell.alignment != TextAlignment.LEFT -> cell.alignment.toComposeTextAlign()
                                 isHeaderCell -> TextAlign.Center
-                                cIdx == 0 -> TextAlign.Center
-                                cIdx == 2 || cIdx == 3 -> TextAlign.Center
                                 else -> TextAlign.Start
                             }
 
                             val cellWeight = when {
-                                isHeaderCell -> FontWeight.Bold
-                                cIdx == 0 -> FontWeight.Bold
-                                cell.isBold -> FontWeight.Bold
+                                isHeaderCell || cell.isBold -> FontWeight.Bold
                                 else -> FontWeight.Normal
                             }
+
+                            val cellBorderModifier = if (table.hasBorders) Modifier.border(0.5.dp, Color(0xFFCBD5E1)) else Modifier
 
                             val cellModifier = if (needsHorizontalScroll) {
                                 val minW = when {
@@ -1314,12 +1295,12 @@ private fun InteractiveTableCard(
                                 }
                                 Modifier
                                     .widthIn(min = minW, max = 260.dp)
-                                    .border(0.5.dp, Color(0xFFCBD5E1))
+                                    .then(cellBorderModifier)
                                     .background(cellBg)
                             } else {
                                 Modifier
                                     .weight(colWeight)
-                                    .border(0.5.dp, Color(0xFFCBD5E1))
+                                    .then(cellBorderModifier)
                                     .background(cellBg)
                             }
 
@@ -1502,7 +1483,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 450 // Word count / visual weight budget per page
+    val maxWeightPerPage = 380 // Word count / visual weight budget per page
 
     for (elemIndex in bodyElements.indices) {
         val element = bodyElements[elemIndex]
@@ -1527,22 +1508,25 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
             }
         }
 
-        // Weight estimation
+        // Weight estimation with realistic line heights
         val elemWeight = when (element) {
             is WordBodyElement.ParagraphElement -> {
                 val txt = element.paragraph.getPlainText().trim()
                 if (txt.isEmpty()) {
-                    1 // Empty spacer paragraph: minimal weight
+                    12 // Spacer paragraph line height
                 } else {
                     val words = element.paragraph.runs.sumOf { it.text.split("\\s+".toRegex()).count { w -> w.isNotBlank() } }
                     val lines = element.paragraph.runs.sumOf { it.text.count { c -> c == '\n' } } + 1
-                    words + (lines * 5)
+                    val maxFontSize = element.paragraph.runs.maxOfOrNull { it.style.fontSizeSp } ?: 16f
+                    val isHeading = element.paragraph.isHeader || element.paragraph.headerLevel > 0 || maxFontSize >= 18f
+                    val headingWeight = if (isHeading) 24 else 0
+                    (lines * 14) + (words * 0.8f).toInt() + headingWeight
                 }
             }
             is WordBodyElement.TableElement -> {
-                (element.table.rows.size * 18).coerceAtLeast(30)
+                (element.table.rows.size * 28).coerceAtLeast(40)
             }
-            is WordBodyElement.ImageElement -> 80
+            is WordBodyElement.ImageElement -> 160
             is WordBodyElement.PageBreakElement -> 0
         }
 

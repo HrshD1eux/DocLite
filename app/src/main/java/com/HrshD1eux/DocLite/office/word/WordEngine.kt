@@ -605,6 +605,11 @@ class WordEngine(private val context: Context) {
         var insideTable = false
         var insideTableRow = false
         var insideTableCell = false
+        var currentTableHasBorders = true
+        var insideTblBorders = false
+        var nilBorderCount = 0
+        var totalBorderCount = 0
+        var currentRowIsHeader = false
         val currentTableRows = mutableListOf<WordTableRow>()
         val currentCells = mutableListOf<WordTableCell>()
         val currentCellText = StringBuilder()
@@ -619,6 +624,7 @@ class WordEngine(private val context: Context) {
         var headerLevel = 0
         var bulletPrefix: String? = null
         var hasPageBreakBefore = false
+        var isStandalonePageBreak = false
         val currentRuns = mutableListOf<TextRun>()
 
         var insidePPr = false
@@ -650,12 +656,38 @@ class WordEngine(private val context: Context) {
                     when (tag) {
                         "tbl" -> {
                             insideTable = true
+                            currentTableHasBorders = true
+                            insideTblBorders = false
+                            nilBorderCount = 0
+                            totalBorderCount = 0
                             currentTableRows.clear()
+                        }
+                        "tblBorders" -> {
+                            if (insideTable && !insideTableCell) {
+                                insideTblBorders = true
+                                nilBorderCount = 0
+                                totalBorderCount = 0
+                            }
+                        }
+                        "top", "left", "bottom", "right", "insideH", "insideV" -> {
+                            if (insideTblBorders) {
+                                totalBorderCount++
+                                val valAttr = getValAttr(parser)
+                                if (valAttr != null && (valAttr.equals("nil", ignoreCase = true) || valAttr.equals("none", ignoreCase = true))) {
+                                    nilBorderCount++
+                                }
+                            }
                         }
                         "tr" -> {
                             if (insideTable) {
                                 insideTableRow = true
+                                currentRowIsHeader = false
                                 currentCells.clear()
+                            }
+                        }
+                        "tblHeader" -> {
+                            if (insideTableRow) {
+                                currentRowIsHeader = true
                             }
                         }
                         "tc" -> {
@@ -675,6 +707,7 @@ class WordEngine(private val context: Context) {
                             headerLevel = 0
                             bulletPrefix = null
                             hasPageBreakBefore = false
+                            isStandalonePageBreak = false
                             currentRuns.clear()
 
                             insidePPr = false
@@ -818,8 +851,24 @@ class WordEngine(private val context: Context) {
                             }
                         }
                         "lastRenderedPageBreak" -> {
-                            // Ignored: OpenXML lastRenderedPageBreak is a desktop rendering cache marker,
-                            // not an author-defined page break.
+                            if (insideParagraph) {
+                                if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
+                                    hasPageBreakBefore = true
+                                } else {
+                                    val runsBefore = currentRuns.toList()
+                                    currentRuns.clear()
+                                    val prevParagraph = Paragraph(
+                                        runs = runsBefore,
+                                        alignment = paraAlignment,
+                                        isHeader = isHeader,
+                                        headerLevel = headerLevel,
+                                        bulletPrefix = bulletPrefix
+                                    )
+                                    bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
+                                    pageNumberCounter++
+                                    bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                }
+                            }
                         }
                         "t" -> {
                             insideTextTag = true
@@ -841,8 +890,28 @@ class WordEngine(private val context: Context) {
                                 }
                             }
                             if (isPageBreak) {
-                                pageNumberCounter++
-                                bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                if (insideParagraph) {
+                                    if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
+                                        hasPageBreakBefore = true
+                                        isStandalonePageBreak = true
+                                    } else {
+                                        val runsBefore = currentRuns.toList()
+                                        currentRuns.clear()
+                                        val prevParagraph = Paragraph(
+                                            runs = runsBefore,
+                                            alignment = paraAlignment,
+                                            isHeader = isHeader,
+                                            headerLevel = headerLevel,
+                                            bulletPrefix = bulletPrefix
+                                        )
+                                        bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
+                                        pageNumberCounter++
+                                        bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                    }
+                                } else {
+                                    pageNumberCounter++
+                                    bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                }
                             } else if (insideRun) {
                                 if (insideTableCell) currentCellText.append("\n")
                                 else currentRuns.add(TextRun(text = "\n", style = TextStyle(isBold, isItalic, isUnderline, fontSizeSp, fontColorHex)))
@@ -934,24 +1003,33 @@ class WordEngine(private val context: Context) {
                                 }
                             }
                         }
+                        "tblBorders" -> {
+                            if (insideTblBorders) {
+                                if (totalBorderCount > 0 && nilBorderCount == totalBorderCount) {
+                                    currentTableHasBorders = false
+                                }
+                                insideTblBorders = false
+                            }
+                        }
                         "p" -> {
                             if (!insideTableCell && !insideTable) {
-                                val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
-                                val rawXml = rawParaBlocks.getOrNull(topLevelParaIndex++)
-                                val paragraph = Paragraph(
-                                    runs = runs,
-                                    alignment = paraAlignment,
-                                    isHeader = isHeader,
-                                    headerLevel = headerLevel,
-                                    bulletPrefix = bulletPrefix,
-                                    hasPageBreakBefore = hasPageBreakBefore,
-                                    rawXml = rawXml
-                                )
-                                if (hasPageBreakBefore) {
+                                if (isStandalonePageBreak && currentRuns.all { it.text.isBlank() }) {
                                     pageNumberCounter++
                                     bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                } else {
+                                    val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
+                                    val rawXml = rawParaBlocks.getOrNull(topLevelParaIndex++)
+                                    val paragraph = Paragraph(
+                                        runs = runs,
+                                        alignment = paraAlignment,
+                                        isHeader = isHeader,
+                                        headerLevel = headerLevel,
+                                        bulletPrefix = bulletPrefix,
+                                        hasPageBreakBefore = hasPageBreakBefore,
+                                        rawXml = rawXml
+                                    )
+                                    bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
                                 }
-                                bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
                             } else if (insideTableCell) {
                                 if (currentCellText.isNotEmpty()) currentCellText.append("\n")
                             }
@@ -959,7 +1037,7 @@ class WordEngine(private val context: Context) {
                         }
                         "tc" -> {
                             if (insideTableRow) {
-                                val isHeader = currentTableRows.isEmpty() || (currentCellBgHex != null && !currentCellBgHex.equals("#FFFFFF", ignoreCase = true))
+                                val isHeader = currentRowIsHeader || (currentTableHasBorders && currentTableRows.isEmpty()) || (currentCellBgHex != null && !currentCellBgHex.equals("#FFFFFF", ignoreCase = true) && currentCellBold)
                                 currentCells.add(
                                     WordTableCell(
                                         text = currentCellText.toString().trim(),
@@ -967,7 +1045,7 @@ class WordEngine(private val context: Context) {
                                         backgroundColorHex = currentCellBgHex,
                                         textColorHex = currentCellColorHex,
                                         alignment = currentCellAlignment,
-                                        isBold = currentCellBold
+                                        isBold = currentCellBold || isHeader
                                     )
                                 )
                                 insideTableCell = false
@@ -979,12 +1057,17 @@ class WordEngine(private val context: Context) {
                                     currentTableRows.add(WordTableRow(cells = currentCells.toList()))
                                 }
                                 insideTableRow = false
+                                currentRowIsHeader = false
                             }
                         }
                         "tbl" -> {
                             if (currentTableRows.isNotEmpty()) {
                                 val rawXml = rawTableBlocks.getOrNull(topLevelTableIndex++)
-                                bodyElements.add(WordBodyElement.TableElement(WordTable(rows = currentTableRows.toList(), rawXml = rawXml)))
+                                bodyElements.add(WordBodyElement.TableElement(WordTable(
+                                    rows = currentTableRows.toList(),
+                                    hasBorders = currentTableHasBorders,
+                                    rawXml = rawXml
+                                )))
                             }
                             insideTable = false
                         }
@@ -1739,16 +1822,39 @@ class WordEngine(private val context: Context) {
                         sb.append("</w:tblGrid>")
 
                         for (row in table.rows) {
+                            val isHeaderRow = row.cells.any { it.isHeader }
                             sb.append("<w:tr>")
+                            if (isHeaderRow) {
+                                sb.append("<w:trPr><w:tblHeader/></w:trPr>")
+                            }
                             for (cell in row.cells) {
                                 sb.append("<w:tc>")
                                 sb.append("<w:tcPr>")
                                 sb.append("""<w:tcW w:w="$colWidthDxa" w:type="dxa"/>""")
+                                if (cell.backgroundColorHex != null) {
+                                    val fillHex = cell.backgroundColorHex.removePrefix("#")
+                                    sb.append("""<w:shd w:val="clear" w:color="auto" w:fill="$fillHex"/>""")
+                                }
                                 sb.append("</w:tcPr>")
                                 sb.append("<w:p>")
+                                val jcAlign = when (cell.alignment) {
+                                    TextAlignment.CENTER -> "center"
+                                    TextAlignment.RIGHT -> "right"
+                                    TextAlignment.JUSTIFY -> "both"
+                                    TextAlignment.LEFT -> "left"
+                                }
+                                sb.append("<w:pPr>")
+                                sb.append("""<w:jc w:val="$jcAlign"/>""")
+                                sb.append("</w:pPr>")
                                 sb.append("<w:r>")
-                                if (cell.isHeader) {
-                                    sb.append("<w:rPr><w:b/></w:rPr>")
+                                val hasFormat = cell.isBold || cell.isHeader || cell.textColorHex != null
+                                if (hasFormat) {
+                                    sb.append("<w:rPr>")
+                                    if (cell.isBold || cell.isHeader) sb.append("<w:b/>")
+                                    if (cell.textColorHex != null) {
+                                        sb.append("""<w:color w:val="${cell.textColorHex.removePrefix("#")}"/>""")
+                                    }
+                                    sb.append("</w:rPr>")
                                 }
                                 sb.append("""<w:t xml:space="preserve">""")
                                 sb.append(escapeXml(cell.text))

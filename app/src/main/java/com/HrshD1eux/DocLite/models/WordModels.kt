@@ -62,6 +62,7 @@ data class WordTableRow(
 data class WordTable(
     val id: String = java.util.UUID.randomUUID().toString(),
     val rows: List<WordTableRow> = emptyList(),
+    val hasBorders: Boolean = true,
     val rawXml: String? = null
 )
 

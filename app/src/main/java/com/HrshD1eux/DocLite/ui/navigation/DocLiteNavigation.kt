@@ -1,6 +1,11 @@
 package com.HrshD1eux.DocLite.ui.navigation
 
+import android.app.Activity
 import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -77,10 +82,26 @@ fun DocLiteNavigation(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Routes.HOME
 
+    val context = LocalContext.current
+    var isOpenedFromExternalIntent by rememberSaveable {
+        mutableStateOf(initialIntentUri != null)
+    }
+
     LaunchedEffect(initialIntentUri, initialIntentFormat) {
         if (initialIntentUri != null && initialIntentFormat != null) {
+            isOpenedFromExternalIntent = true
             navigateToFormatEditor(navController, initialIntentUri, initialIntentFormat)
             onIntentConsumed()
+        }
+    }
+
+    val onEditorBack: () -> Unit = {
+        if (isOpenedFromExternalIntent) {
+            (context as? Activity)?.finish()
+        } else {
+            if (!navController.popBackStack()) {
+                (context as? Activity)?.finish()
+            }
         }
     }
 
@@ -149,7 +170,7 @@ fun DocLiteNavigation(
                 BankStatementAnalyserScreen(
                     viewModel = bankViewModel,
                     initialUri = initialUri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
 
@@ -183,7 +204,7 @@ fun DocLiteNavigation(
                 WordEditorScreen(
                     viewModel = wordViewModel,
                     fileUri = uri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
 
@@ -197,7 +218,7 @@ fun DocLiteNavigation(
                 ExcelEditorScreen(
                     viewModel = excelViewModel,
                     fileUri = uri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
 
@@ -211,7 +232,7 @@ fun DocLiteNavigation(
                 PowerPointEditorScreen(
                     viewModel = powerPointViewModel,
                     fileUri = uri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
 
@@ -225,7 +246,7 @@ fun DocLiteNavigation(
                 PdfAnnotatorScreen(
                     viewModel = pdfViewModel,
                     fileUri = uri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
 
@@ -239,7 +260,7 @@ fun DocLiteNavigation(
                 TextEditorScreen(
                     viewModel = textViewModel,
                     fileUri = uri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
 
@@ -253,7 +274,7 @@ fun DocLiteNavigation(
                 ImageViewerScreen(
                     viewModel = imageViewModel,
                     fileUri = uri,
-                    onBack = { navController.popBackStack() }
+                    onBack = onEditorBack
                 )
             }
         }
