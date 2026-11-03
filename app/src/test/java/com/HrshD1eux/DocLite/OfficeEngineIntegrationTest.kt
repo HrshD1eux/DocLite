@@ -1135,10 +1135,10 @@ class OfficeEngineIntegrationTest {
         )
         val weights = com.HrshD1eux.DocLite.ui.screens.word.computeColumnWeights(indexTable)
         assertEquals(4, weights.size)
-        assertEquals(0.75f, weights[0], 0.001f) // S.No. <= 6 chars -> 0.75f (compact serial index column)
-        assertEquals(4.0f, weights[1], 0.001f)  // Practical Title > 20 chars -> 4.0f (wide title column)
-        assertEquals(1.35f, weights[2], 0.001f) // Date <= 12 chars -> 1.35f
-        assertEquals(0.85f, weights[3], 0.001f) // Page <= 5 chars -> 0.85f
+        assertEquals(1.05f, weights[0], 0.001f) // S.No. -> 1.05f
+        assertEquals(4.5f, weights[1], 0.001f)  // Practical Title -> 4.5f
+        assertEquals(1.6f, weights[2], 0.001f)  // Date -> 1.6f
+        assertEquals(1.3f, weights[3], 0.001f)  // Page -> 1.3f
 
         // 2. Test pagination does not generate phantom blank pages on PageBreakElement
         val elements = mutableListOf<WordBodyElement>()
@@ -1166,7 +1166,25 @@ class OfficeEngineIntegrationTest {
             assertTrue("Document must contain at least 1 table", tables.isNotEmpty())
 
             val realPages = com.HrshD1eux.DocLite.ui.screens.word.paginateDocumentElements(doc.bodyElements)
-            assertTrue("DSA Practical File with 31k words and 20 page breaks must paginate sensibly into 20..45 pages instead of 324 phantom pages, got ${realPages.size}", realPages.size in 20..65)
+            println("REAL PAGES COUNT: " + realPages.size)
+            for (p in realPages.take(6)) {
+                val firstTxt = when (val elem = p.elements.firstOrNull()?.element) {
+                    is WordBodyElement.ParagraphElement -> elem.paragraph.getPlainText().take(40)
+                    is WordBodyElement.TableElement -> "TABLE: " + elem.table.rows.firstOrNull()?.cells?.map { it.text }?.joinToString("|")?.take(40)
+                    is WordBodyElement.ImageElement -> "IMAGE"
+                    is WordBodyElement.PageBreakElement -> "PAGE BREAK"
+                    null -> "EMPTY"
+                }
+                val lastTxt = when (val elem = p.elements.lastOrNull()?.element) {
+                    is WordBodyElement.ParagraphElement -> elem.paragraph.getPlainText().take(40)
+                    is WordBodyElement.TableElement -> "TABLE: " + elem.table.rows.lastOrNull()?.cells?.map { it.text }?.joinToString("|")?.take(40)
+                    is WordBodyElement.ImageElement -> "IMAGE"
+                    is WordBodyElement.PageBreakElement -> "PAGE BREAK"
+                    null -> "EMPTY"
+                }
+                println("Page ${p.pageNumber}: elements=${p.elements.size} | First: $firstTxt | Last: $lastTxt")
+            }
+            assertTrue("DSA Practical File with 31k words and 20 page breaks must paginate sensibly into 20..65 pages, got ${realPages.size}", realPages.size in 20..65)
         }
     }
 

@@ -593,6 +593,18 @@ class WordEngine(private val context: Context) {
             Log.w(TAG, "Direct zip media scan exception", t)
         }
 
+        val stylesMap = mutableMapOf<String, DocxStyleInfo>()
+        val stylesEntry = zipFile.getEntry("word/styles.xml")
+            ?: zipFile.entries().asSequence().firstOrNull { it.name.endsWith("styles.xml", ignoreCase = true) }
+        if (stylesEntry != null) {
+            try {
+                val stylesXml = zipFile.getInputStream(stylesEntry).bufferedReader(Charsets.UTF_8).readText()
+                parseDocxStyles(stylesXml, stylesMap)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse word/styles.xml", e)
+            }
+        }
+
         val bodyElements = mutableListOf<WordBodyElement>()
         var wordCount = 0
         var charCount = 0
@@ -745,7 +757,22 @@ class WordEngine(private val context: Context) {
                                 val valAttr = getValAttr(parser)
                                 if (valAttr != null) {
                                     val styleVal = valAttr.lowercase()
-                                    if (styleVal.contains("heading") || styleVal.contains("title")) {
+                                    val styleDef = stylesMap[valAttr] ?: stylesMap[styleVal]
+                                    if (styleDef != null) {
+                                        if (styleDef.isBold) pDefaultBold = true
+                                        if (styleDef.isItalic) pDefaultItalic = true
+                                        if (styleDef.fontSizeSp != null) pDefaultFontSize = styleDef.fontSizeSp
+                                        if (styleDef.fontColorHex != null) pDefaultColor = styleDef.fontColorHex
+                                        if (styleVal.contains("heading") || styleVal.contains("title")) {
+                                            isHeader = true
+                                            headerLevel = when {
+                                                styleVal.contains("1") -> 1
+                                                styleVal.contains("2") -> 2
+                                                styleVal.contains("3") -> 3
+                                                else -> 1
+                                            }
+                                        }
+                                    } else if (styleVal.contains("heading") || styleVal.contains("title")) {
                                         isHeader = true
                                         headerLevel = when {
                                             styleVal.contains("1") -> 1
@@ -759,6 +786,15 @@ class WordEngine(private val context: Context) {
                                             2 -> 20f
                                             else -> 18f
                                         }
+                                        pDefaultColor = when (headerLevel) {
+                                            1 -> "#17365D"
+                                            2 -> "#2E74B5"
+                                            else -> "#4F81BD"
+                                        }
+                                    } else if (styleVal.contains("subtitle")) {
+                                        pDefaultItalic = true
+                                        pDefaultFontSize = 16f
+                                        pDefaultColor = "#4F81BD"
                                     }
                                     if (styleVal.contains("bullet") || styleVal.contains("list")) {
                                         bulletPrefix = "\u2022 "
@@ -809,7 +845,13 @@ class WordEngine(private val context: Context) {
                             val halfPts = valAttr?.toFloatOrNull()
                             if (halfPts != null && halfPts > 0) {
                                 val sizeSp = halfPts / 2f
-                                if (insideRun) fontSizeSp = sizeSp else if (insidePPr) pDefaultFontSize = sizeSp
+                                if (insideRun) {
+                                    fontSizeSp = sizeSp
+                                    if (fontSizeSp >= 20f && fontColorHex == "#1C1B1F") fontColorHex = "#1F497D"
+                                } else if (insidePPr) {
+                                    pDefaultFontSize = sizeSp
+                                    if (pDefaultFontSize >= 20f && pDefaultColor == "#1C1B1F") pDefaultColor = "#1F497D"
+                                }
                             }
                         }
                         "shd" -> {
@@ -852,21 +894,24 @@ class WordEngine(private val context: Context) {
                         }
                         "lastRenderedPageBreak" -> {
                             if (insideParagraph) {
-                                if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
-                                    hasPageBreakBefore = true
-                                } else {
-                                    val runsBefore = currentRuns.toList()
-                                    currentRuns.clear()
-                                    val prevParagraph = Paragraph(
-                                        runs = runsBefore,
-                                        alignment = paraAlignment,
-                                        isHeader = isHeader,
-                                        headerLevel = headerLevel,
-                                        bulletPrefix = bulletPrefix
-                                    )
-                                    bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
-                                    pageNumberCounter++
-                                    bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                val prevIsBreak = bodyElements.lastOrNull() is WordBodyElement.PageBreakElement
+                                if (!prevIsBreak && !hasPageBreakBefore) {
+                                    if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
+                                        hasPageBreakBefore = true
+                                    } else {
+                                        val runsBefore = currentRuns.toList()
+                                        currentRuns.clear()
+                                        val prevParagraph = Paragraph(
+                                            runs = runsBefore,
+                                            alignment = paraAlignment,
+                                            isHeader = isHeader,
+                                            headerLevel = headerLevel,
+                                            bulletPrefix = bulletPrefix
+                                        )
+                                        bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
+                                        pageNumberCounter++
+                                        bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                    }
                                 }
                             }
                         }
@@ -890,27 +935,30 @@ class WordEngine(private val context: Context) {
                                 }
                             }
                             if (isPageBreak) {
-                                if (insideParagraph) {
-                                    if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
-                                        hasPageBreakBefore = true
-                                        isStandalonePageBreak = true
+                                val prevIsBreak = bodyElements.lastOrNull() is WordBodyElement.PageBreakElement
+                                if (!prevIsBreak) {
+                                    if (insideParagraph) {
+                                        if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
+                                            hasPageBreakBefore = true
+                                            isStandalonePageBreak = true
+                                        } else {
+                                            val runsBefore = currentRuns.toList()
+                                            currentRuns.clear()
+                                            val prevParagraph = Paragraph(
+                                                runs = runsBefore,
+                                                alignment = paraAlignment,
+                                                isHeader = isHeader,
+                                                headerLevel = headerLevel,
+                                                bulletPrefix = bulletPrefix
+                                            )
+                                            bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
+                                            pageNumberCounter++
+                                            bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                        }
                                     } else {
-                                        val runsBefore = currentRuns.toList()
-                                        currentRuns.clear()
-                                        val prevParagraph = Paragraph(
-                                            runs = runsBefore,
-                                            alignment = paraAlignment,
-                                            isHeader = isHeader,
-                                            headerLevel = headerLevel,
-                                            bulletPrefix = bulletPrefix
-                                        )
-                                        bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
                                         pageNumberCounter++
                                         bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
                                     }
-                                } else {
-                                    pageNumberCounter++
-                                    bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
                                 }
                             } else if (insideRun) {
                                 if (insideTableCell) currentCellText.append("\n")
@@ -1013,9 +1061,12 @@ class WordEngine(private val context: Context) {
                         }
                         "p" -> {
                             if (!insideTableCell && !insideTable) {
+                                val prevIsBreak = bodyElements.lastOrNull() is WordBodyElement.PageBreakElement
                                 if (isStandalonePageBreak && currentRuns.all { it.text.isBlank() }) {
-                                    pageNumberCounter++
-                                    bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                    if (!prevIsBreak) {
+                                        pageNumberCounter++
+                                        bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
+                                    }
                                 } else {
                                     val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
                                     val rawXml = rawParaBlocks.getOrNull(topLevelParaIndex++)
@@ -1025,7 +1076,7 @@ class WordEngine(private val context: Context) {
                                         isHeader = isHeader,
                                         headerLevel = headerLevel,
                                         bulletPrefix = bulletPrefix,
-                                        hasPageBreakBefore = hasPageBreakBefore,
+                                        hasPageBreakBefore = if (prevIsBreak) false else hasPageBreakBefore,
                                         rawXml = rawXml
                                     )
                                     bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
@@ -1611,6 +1662,98 @@ class WordEngine(private val context: Context) {
         } catch (t: Throwable) {
             Log.w(TAG, "POI load encountered exception: ${t.message}")
             null
+        }
+    }
+
+    private data class DocxStyleInfo(
+        val isBold: Boolean = false,
+        val isItalic: Boolean = false,
+        val fontSizeSp: Float? = null,
+        val fontColorHex: String? = null
+    )
+
+    private fun parseDocxStyles(stylesXml: String, targetMap: MutableMap<String, DocxStyleInfo>) {
+        try {
+            val factory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }
+            val parser = factory.newPullParser()
+            parser.setInput(StringReader(stylesXml))
+            var eventType = parser.eventType
+            var currentStyleId: String? = null
+            var inRPr = false
+            var isBold = false
+            var isItalic = false
+            var fontSizeSp: Float? = null
+            var fontColorHex: String? = null
+
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        val tag = parser.name?.substringAfterLast(':') ?: ""
+                        when (tag) {
+                            "style" -> {
+                                currentStyleId = null
+                                inRPr = false
+                                isBold = false
+                                isItalic = false
+                                fontSizeSp = null
+                                fontColorHex = null
+                                for (i in 0 until parser.attributeCount) {
+                                    val aName = parser.getAttributeName(i).substringAfterLast(':')
+                                    if (aName.equals("styleId", ignoreCase = true)) {
+                                        currentStyleId = parser.getAttributeValue(i)
+                                        break
+                                    }
+                                }
+                            }
+                            "rPr" -> inRPr = true
+                            "b", "bCs" -> {
+                                if (inRPr) {
+                                    val v = getValAttr(parser)
+                                    isBold = v == null || v == "1" || v.equals("true", ignoreCase = true)
+                                }
+                            }
+                            "i", "iCs" -> {
+                                if (inRPr) {
+                                    val v = getValAttr(parser)
+                                    isItalic = v == null || v == "1" || v.equals("true", ignoreCase = true)
+                                }
+                            }
+                            "sz", "szCs" -> {
+                                if (inRPr) {
+                                    val v = getValAttr(parser)?.toFloatOrNull()
+                                    if (v != null && v > 0) fontSizeSp = v / 2f
+                                }
+                            }
+                            "color" -> {
+                                if (inRPr) {
+                                    val v = getValAttr(parser)
+                                    if (v != null && v != "auto") {
+                                        fontColorHex = if (v.startsWith("#")) v else "#$v"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        val tag = parser.name?.substringAfterLast(':') ?: ""
+                        when (tag) {
+                            "rPr" -> inRPr = false
+                            "style" -> {
+                                val sId = currentStyleId
+                                if (sId != null) {
+                                    val info = DocxStyleInfo(isBold, isItalic, fontSizeSp, fontColorHex)
+                                    targetMap[sId] = info
+                                    targetMap[sId.lowercase()] = info
+                                }
+                                currentStyleId = null
+                            }
+                        }
+                    }
+                }
+                eventType = parser.next()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Exception parsing styles.xml", e)
         }
     }
 

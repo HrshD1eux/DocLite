@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -518,8 +519,8 @@ fun WordEditorScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = if (a4PrintMode) 20.dp else 12.dp,
-                                                vertical = if (a4PrintMode) 24.dp else 14.dp
+                                                horizontal = if (a4PrintMode) 16.dp else 12.dp,
+                                                vertical = if (a4PrintMode) 20.dp else 14.dp
                                             )
                                     ) {
 
@@ -615,7 +616,7 @@ fun WordEditorScreen(
                                                     }
                                                 }
                                             }
-                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Spacer(modifier = Modifier.height(if (element is WordBodyElement.TableElement || element is WordBodyElement.ImageElement) 6.dp else 1.dp))
                                         }
 
                                         // Page Footer
@@ -1133,6 +1134,10 @@ private fun PageBreakCutDivider(
 
 @Composable
 private fun ViewModeParagraph(paragraph: Paragraph) {
+    val maxFontSize = paragraph.runs.maxOfOrNull { it.style.fontSizeSp } ?: 16f
+    val isTitleOrHeading = paragraph.isHeader || paragraph.headerLevel > 0 || (maxFontSize >= 18f && paragraph.alignment == TextAlignment.CENTER)
+    val isBlankPara = paragraph.getPlainText().isBlank()
+
     val annotatedText = buildAnnotatedString {
         if (!paragraph.bulletPrefix.isNullOrEmpty()) {
             withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
@@ -1140,8 +1145,14 @@ private fun ViewModeParagraph(paragraph: Paragraph) {
             }
         }
         paragraph.runs.forEach { run ->
+            val rawColor = run.style.getComposeColor()
+            val runColor = if (isTitleOrHeading && (rawColor == Color(0xFF1C1B1F) || rawColor == Color.Black || rawColor == Color(0xFF1E293B))) {
+                Color(0xFF1F497D)
+            } else {
+                rawColor
+            }
             val spanStyle = SpanStyle(
-                fontWeight = if (run.style.isBold || paragraph.isHeader) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (run.style.isBold || paragraph.isHeader || isTitleOrHeading) FontWeight.Bold else FontWeight.Normal,
                 fontStyle = if (run.style.isItalic) FontStyle.Italic else FontStyle.Normal,
                 textDecoration = if (run.style.isUnderline) TextDecoration.Underline else TextDecoration.None,
                 fontSize = if (paragraph.isHeader) {
@@ -1151,7 +1162,7 @@ private fun ViewModeParagraph(paragraph: Paragraph) {
                         else -> 18.sp
                     }
                 } else run.style.fontSizeSp.sp,
-                color = run.style.getComposeColor()
+                color = runColor
             )
             withStyle(spanStyle) {
                 append(run.text)
@@ -1164,8 +1175,19 @@ private fun ViewModeParagraph(paragraph: Paragraph) {
         textAlign = paragraph.alignment.toComposeTextAlign(),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = if (paragraph.isHeader) 8.dp else 4.dp),
-        lineHeight = if (paragraph.isHeader) 30.sp else 22.sp
+            .padding(
+                vertical = when {
+                    paragraph.isHeader -> 6.dp
+                    isBlankPara -> 2.dp
+                    else -> 1.5.dp
+                }
+            ),
+        lineHeight = when {
+            paragraph.isHeader -> 28.sp
+            maxFontSize >= 18f -> (maxFontSize * 1.3f).sp
+            isBlankPara -> 8.sp
+            else -> 18.sp
+        }
     )
 }
 
@@ -1192,11 +1214,38 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
     return List(numCols) { cIdx ->
         val maxLen = maxLens[cIdx]
         when {
-            cIdx == 0 && maxLen <= 6 -> 0.75f // S.No., #, ID: compact (~8%)
-            maxLen <= 5 -> 0.85f              // Short codes/pages
-            maxLen <= 12 -> 1.35f             // Dates, short titles
-            maxLen <= 20 -> 1.75f             // Signatures
-            else -> 4.0f                      // Practical Title, Description, Topics: wide (~44%)
+            numCols == 5 -> {
+                when (cIdx) {
+                    0 -> 1.05f // S.No. (fits "S.No." and 2-digit serial on 1 line)
+                    1 -> 3.85f // Practical Title (wide, wraps cleanly)
+                    2 -> 1.55f // Date (fits "11/08/2026" or "11/08/26" on 1 line without wrapping)
+                    3 -> 1.25f // Page No. (fits "Page No." and "37-38" on 1 line)
+                    4 -> 1.50f // Teacher's Sign
+                    else -> 1.0f
+                }
+            }
+            numCols == 4 -> {
+                when (cIdx) {
+                    0 -> 1.05f // S.No.
+                    1 -> 4.5f  // Practical Title
+                    2 -> 1.6f  // Date
+                    3 -> 1.3f  // Page
+                    else -> 1.0f
+                }
+            }
+            numCols == 3 -> {
+                when (cIdx) {
+                    0 -> 1.05f // S.No.
+                    1 -> 5.2f  // Title
+                    2 -> 1.35f // Page No.
+                    else -> 1.0f
+                }
+            }
+            cIdx == 0 && maxLen <= 6 -> 1.0f
+            maxLen <= 5 -> 1.1f
+            maxLen <= 12 -> 1.5f
+            maxLen <= 20 -> 1.8f
+            else -> 4.0f
         }
     }
 }
@@ -1213,8 +1262,8 @@ private fun InteractiveTableCard(
     if (table.rows.isEmpty()) return
 
     val numCols = table.rows.maxOfOrNull { it.cells.size } ?: 0
-    // Tables up to 5 columns fit directly across the page without horizontal scrolling in both A4 and mobile view!
-    val needsHorizontalScroll = numCols > 5
+    // In A4 print mode or fit-to-screen, standard tables with up to 6 columns fit across the paper without horizontal scrolling
+    val needsHorizontalScroll = !fitToScreen && numCols > 6
     val colWeights = remember(table) { computeColumnWeights(table) }
 
     val tableCardModifier = if (table.hasBorders) {
@@ -1277,11 +1326,14 @@ private fun InteractiveTableCard(
                             val cellAlignment = when {
                                 cell.alignment != TextAlignment.LEFT -> cell.alignment.toComposeTextAlign()
                                 isHeaderCell -> TextAlign.Center
+                                cIdx == 0 -> TextAlign.Center
+                                cIdx >= 2 && numCols >= 4 -> TextAlign.Center
                                 else -> TextAlign.Start
                             }
 
                             val cellWeight = when {
-                                isHeaderCell || cell.isBold -> FontWeight.Bold
+                                isHeaderCell || cell.isBold || (cIdx == 0 && table.hasBorders) -> FontWeight.Bold
+                                cIdx == 3 && numCols >= 4 -> FontWeight.SemiBold
                                 else -> FontWeight.Normal
                             }
 
@@ -1304,6 +1356,15 @@ private fun InteractiveTableCard(
                                     .background(cellBg)
                             }
 
+                            val cellPadding = if (numCols >= 4) {
+                                PaddingValues(horizontal = 2.dp, vertical = if (isHeaderCell) 6.dp else 4.dp)
+                            } else {
+                                PaddingValues(horizontal = 4.dp, vertical = if (isHeaderCell) 8.dp else 5.dp)
+                            }
+
+                            val cellFontSize = if (numCols >= 5) 10.sp else if (numCols >= 4) 10.5.sp else 11.5.sp
+                            val cellLineHeight = if (numCols >= 5) 13.sp else if (numCols >= 4) 14.sp else 15.sp
+
                             Box(
                                 modifier = cellModifier
                                     .then(
@@ -1311,28 +1372,52 @@ private fun InteractiveTableCard(
                                             Modifier.clickable { onCellClick(rIdx, cIdx, cell.text) }
                                         } else Modifier
                                     )
-                                    .padding(horizontal = 4.dp, vertical = if (isHeaderCell) 8.dp else 5.dp),
+                                    .padding(cellPadding),
                                 contentAlignment = when (cellAlignment) {
                                     TextAlign.Center -> Alignment.Center
                                     TextAlign.Right, TextAlign.End -> Alignment.CenterEnd
                                     else -> Alignment.CenterStart
                                 }
                             ) {
-                                Text(
-                                    text = cell.text.ifEmpty { if (isEditing) "—" else "" },
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontWeight = cellWeight,
-                                        fontSize = if (isHeaderCell) 11.5.sp else 11.sp,
+                                if (cell.text.contains("\n") && !table.hasBorders) {
+                                    val lines = cell.text.split("\n")
+                                    val annotatedCellText = buildAnnotatedString {
+                                        lines.forEachIndexed { lineIdx, line ->
+                                            if (lineIdx > 0) append("\n")
+                                            val isSubmittedLabel = line.trim().startsWith("SUBMITTED", ignoreCase = true)
+                                            val isPersonName = lineIdx == 1 && lines[0].trim().startsWith("SUBMITTED", ignoreCase = true)
+                                            val lineStyle = SpanStyle(
+                                                fontWeight = if (isSubmittedLabel || isPersonName) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSubmittedLabel) Color(0xFF1F497D) else Color(0xFF1E293B),
+                                                fontSize = if (isSubmittedLabel) 11.5.sp else 11.sp
+                                            )
+                                            withStyle(lineStyle) {
+                                                append(line)
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = annotatedCellText,
+                                        modifier = Modifier.fillMaxWidth(),
                                         lineHeight = 15.sp
-                                    ),
-                                    color = if (cell.text.isEmpty() && isEditing) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                    } else {
-                                        cellFg
-                                    },
-                                    textAlign = cellAlignment,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                    )
+                                } else {
+                                    Text(
+                                        text = cell.text.ifEmpty { if (isEditing) "—" else "" },
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontWeight = cellWeight,
+                                            fontSize = if (isHeaderCell) (cellFontSize.value + 0.5f).sp else cellFontSize,
+                                            lineHeight = cellLineHeight
+                                        ),
+                                        color = if (cell.text.isEmpty() && isEditing) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        } else {
+                                            cellFg
+                                        },
+                                        textAlign = cellAlignment,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
                         }
 
@@ -1434,6 +1519,8 @@ private fun DocumentImageItem(
                 )
             }
         } else {
+            val maxW = (element.widthDp.takeIf { it in 60..240 } ?: 180).dp
+            val maxH = (element.heightDp.takeIf { it in 40..220 } ?: 170).dp
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(fileModel)
@@ -1443,8 +1530,7 @@ private fun DocumentImageItem(
                 onError = { isImageError = true },
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
-                    .fillMaxWidth(if (fitToScreen) 0.65f else 0.85f)
-                    .heightIn(min = 60.dp, max = 280.dp),
+                    .sizeIn(maxWidth = maxW, maxHeight = maxH),
                 contentScale = ContentScale.Fit
             )
         }
@@ -1483,7 +1569,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 380 // Word count / visual weight budget per page
+    val maxWeightPerPage = 490 // Calibrated to Word's A4 vertical height capacity
 
     for (elemIndex in bodyElements.indices) {
         val element = bodyElements[elemIndex]
@@ -1513,25 +1599,39 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
             is WordBodyElement.ParagraphElement -> {
                 val txt = element.paragraph.getPlainText().trim()
                 if (txt.isEmpty()) {
-                    12 // Spacer paragraph line height
+                    8 // Compact empty spacer paragraph
                 } else {
                     val words = element.paragraph.runs.sumOf { it.text.split("\\s+".toRegex()).count { w -> w.isNotBlank() } }
                     val lines = element.paragraph.runs.sumOf { it.text.count { c -> c == '\n' } } + 1
                     val maxFontSize = element.paragraph.runs.maxOfOrNull { it.style.fontSizeSp } ?: 16f
                     val isHeading = element.paragraph.isHeader || element.paragraph.headerLevel > 0 || maxFontSize >= 18f
-                    val headingWeight = if (isHeading) 24 else 0
-                    (lines * 14) + (words * 0.8f).toInt() + headingWeight
+                    val headingWeight = if (isHeading) 18 else 0
+                    (lines * 14) + (words * 0.15f).toInt() + headingWeight
                 }
             }
             is WordBodyElement.TableElement -> {
-                (element.table.rows.size * 28).coerceAtLeast(40)
+                if (!element.table.hasBorders) {
+                    (element.table.rows.size * 18).coerceIn(40, 90)
+                } else {
+                    (element.table.rows.size * 20).coerceAtLeast(35)
+                }
             }
-            is WordBodyElement.ImageElement -> 160
+            is WordBodyElement.ImageElement -> 130
             is WordBodyElement.PageBreakElement -> 0
         }
 
+        // Keep-with-next heuristic: If current page only contains a heading or "INDEX", don't break before the table/content
+        val onlyHasHeadings = currentElements.isNotEmpty() && currentElements.all {
+            val elem = it.element
+            elem is WordBodyElement.ParagraphElement && (
+                elem.paragraph.isHeader ||
+                elem.paragraph.headerLevel > 0 ||
+                elem.paragraph.getPlainText().trim().lowercase() in listOf("index", "table of contents", "contents", "practical file")
+            )
+        }
+
         // Natural page break if capacity reached and page already has substantial content
-        if (currentElements.isNotEmpty() && (accumulatedWeight + elemWeight > maxWeightPerPage)) {
+        if (currentElements.isNotEmpty() && !onlyHasHeadings && (accumulatedWeight + elemWeight > maxWeightPerPage)) {
             pages.add(DocumentPage(pageCounter++, currentElements.toList()))
             currentElements.clear()
             accumulatedWeight = 0
