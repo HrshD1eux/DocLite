@@ -57,7 +57,8 @@ data class WordTableRow(
 
 data class WordTable(
     val id: String = java.util.UUID.randomUUID().toString(),
-    val rows: List<WordTableRow> = emptyList()
+    val rows: List<WordTableRow> = emptyList(),
+    val rawXml: String? = null
 )
 
 sealed interface WordBodyElement {
@@ -111,7 +112,9 @@ data class WordDocument(
     val wordCount: Int = 0,
     val characterCount: Int = 0,
     val hasUnrecognizedElements: Boolean = false,
-    val sectPrXml: String? = null
+    val sectPrXml: String? = null,
+    val originalXmlContent: String? = null,
+    val originalRootDocumentTag: String? = null
 ) {
     /** Computed view — always in sync with bodyElements. */
     val paragraphs: List<Paragraph>

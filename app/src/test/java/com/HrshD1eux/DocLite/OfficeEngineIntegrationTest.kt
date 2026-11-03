@@ -1169,4 +1169,65 @@ class OfficeEngineIntegrationTest {
             assertTrue("DSA Practical File with 31k words and 20 page breaks must paginate sensibly into ~40 pages instead of 324 phantom pages, got ${realPages.size}", realPages.size in 38..45)
         }
     }
+
+    @Test
+    fun nonDestructiveDeltaSaving_preservesOriginalXmlAndZipEntries() = runTest {
+        val testDoc = File(context.cacheDir, "delta_test_${System.currentTimeMillis()}.docx")
+        val uri = Uri.fromFile(testDoc)
+
+        // 1. Create document with multiple elements
+        val initialDoc = WordDocument(
+            title = testDoc.name,
+            fileUri = uri.toString(),
+            bodyElements = listOf(
+                WordBodyElement.ParagraphElement(Paragraph(runs = listOf(TextRun("Original Paragraph 1")))),
+                WordBodyElement.ParagraphElement(Paragraph(runs = listOf(TextRun("Original Paragraph 2")))),
+                WordBodyElement.TableElement(
+                    WordTable(
+                        rows = listOf(
+                            WordTableRow(listOf(WordTableCell("Col A"), WordTableCell("Col B"))),
+                            WordTableRow(listOf(WordTableCell("Val 1"), WordTableCell("Val 2")))
+                        )
+                    )
+                ),
+                WordBodyElement.ParagraphElement(Paragraph(runs = listOf(TextRun("Original Paragraph 3"))))
+            )
+        )
+        val initialSave = wordEngine.saveDocument(uri, initialDoc)
+        assertTrue(initialSave)
+
+        // 2. Reload: elements should now possess captured rawXml chunks
+        val loaded1 = wordEngine.loadDocument(uri)
+        assertNotNull(loaded1)
+        val p1 = (loaded1.bodyElements[0] as WordBodyElement.ParagraphElement).paragraph
+        val p2 = (loaded1.bodyElements[1] as WordBodyElement.ParagraphElement).paragraph
+        val tbl = (loaded1.bodyElements[2] as WordBodyElement.TableElement).table
+        val p3 = (loaded1.bodyElements[3] as WordBodyElement.ParagraphElement).paragraph
+
+        assertNotNull("Untouched paragraph 1 must have rawXml", p1.rawXml)
+        assertNotNull("Untouched paragraph 2 must have rawXml", p2.rawXml)
+        assertNotNull("Untouched table must have rawXml", tbl.rawXml)
+        assertNotNull("Untouched paragraph 3 must have rawXml", p3.rawXml)
+
+        // 3. Edit ONLY paragraph 2: clear its rawXml to simulate a user edit
+        val editedP2 = p2.copy(runs = listOf(TextRun("MODIFIED Paragraph 2 Content")), rawXml = null)
+        val updatedElements = listOf(
+            WordBodyElement.ParagraphElement(p1),      // rawXml intact -> non-destructive delta
+            WordBodyElement.ParagraphElement(editedP2), // rawXml null -> serialized cleanly
+            WordBodyElement.TableElement(tbl),         // rawXml intact -> non-destructive delta
+            WordBodyElement.ParagraphElement(p3)       // rawXml intact -> non-destructive delta
+        )
+        val deltaDoc = loaded1.copy(bodyElements = updatedElements)
+        val saveDelta = wordEngine.saveDocument(uri, deltaDoc)
+        assertTrue("Delta save must succeed without POI", saveDelta)
+
+        // 4. Reload and verify exact preservation
+        val reloaded = wordEngine.loadDocument(uri)
+        assertEquals("Original Paragraph 1", (reloaded.bodyElements[0] as WordBodyElement.ParagraphElement).paragraph.getPlainText().trim())
+        assertEquals("MODIFIED Paragraph 2 Content", (reloaded.bodyElements[1] as WordBodyElement.ParagraphElement).paragraph.getPlainText().trim())
+        assertEquals("Col A", (reloaded.bodyElements[2] as WordBodyElement.TableElement).table.rows[0].cells[0].text)
+        assertEquals("Original Paragraph 3", (reloaded.bodyElements[3] as WordBodyElement.ParagraphElement).paragraph.getPlainText().trim())
+
+        testDoc.delete()
+    }
 }

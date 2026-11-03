@@ -7,6 +7,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -84,6 +87,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -92,8 +96,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -139,7 +146,10 @@ fun WordEditorScreen(
     var renameInput by remember { mutableStateOf("") }
     var editingCell by remember { mutableStateOf<TableCellEditTarget?>(null) }
     var cellEditText by remember { mutableStateOf("") }
-    var fitToScreen by rememberSaveable { mutableStateOf(true) }
+    var a4PrintMode by rememberSaveable { mutableStateOf(true) }
+    var zoomScale by rememberSaveable { mutableFloatStateOf(1f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
+    val fitToScreen = !a4PrintMode
 
     LaunchedEffect(fileUri) {
         viewModel.loadDocument(fileUri)
@@ -397,17 +407,23 @@ fun WordEditorScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 FilterChip(
-                                    selected = fitToScreen,
-                                    onClick = { fitToScreen = !fitToScreen },
+                                    selected = a4PrintMode,
+                                    onClick = {
+                                        a4PrintMode = !a4PrintMode
+                                        if (!a4PrintMode) {
+                                            zoomScale = 1f
+                                            panOffset = Offset.Zero
+                                        }
+                                    },
                                     label = {
                                         Text(
-                                            if (fitToScreen) "Fit Screen" else "A4 View",
+                                            if (a4PrintMode) "A4 Print View" else "Mobile Flow",
                                             style = MaterialTheme.typography.labelSmall
                                         )
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = if (fitToScreen) Icons.Default.FitScreen else Icons.Default.AspectRatio,
+                                            imageVector = if (a4PrintMode) Icons.Default.AspectRatio else Icons.Default.FitScreen,
                                             contentDescription = null,
                                             modifier = Modifier.size(14.dp)
                                         )
@@ -426,40 +442,66 @@ fun WordEditorScreen(
                         )
                     }
 
-                    // Paginated Document Canvas (Fit to Screen or A4 View)
+                    // Paginated Document Canvas (A4 Print Mode with Pinch-To-Zoom or Mobile Flow)
                     val pages = remember(uiState.document.bodyElements) {
                         paginateDocumentElements(uiState.document.bodyElements)
                     }
 
-                    val deskModifier = if (fitToScreen) {
-                        Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFFE8EEF2))
-                    } else {
-                        Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFFE8EEF2))
-                            .horizontalScroll(rememberScrollState())
+                    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+                        if (a4PrintMode) {
+                            val newScale = (zoomScale * zoomChange).coerceIn(0.6f, 3.0f)
+                            zoomScale = newScale
+                            if (newScale > 1.05f) {
+                                panOffset = Offset(
+                                    x = (panOffset.x + panChange.x).coerceIn(-400f * (newScale - 1f), 400f * (newScale - 1f)),
+                                    y = 0f
+                                )
+                            } else {
+                                panOffset = Offset.Zero
+                            }
+                        }
                     }
 
                     Box(
-                        modifier = deskModifier,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFE2E8F0))
+                            .then(
+                                if (a4PrintMode) {
+                                    Modifier
+                                        .transformable(state = transformableState)
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(
+                                                onDoubleTap = {
+                                                    zoomScale = if (zoomScale > 1.05f) 1f else 1.5f
+                                                    panOffset = Offset.Zero
+                                                }
+                                            )
+                                        }
+                                } else Modifier
+                            ),
                         contentAlignment = Alignment.TopCenter
                     ) {
-                        val columnModifier = if (fitToScreen) {
+                        val columnModifier = if (a4PrintMode) {
                             Modifier
-                                .fillMaxSize()
+                                .widthIn(min = 340.dp, max = 560.dp)
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    scaleX = zoomScale
+                                    scaleY = zoomScale
+                                    translationX = panOffset.x
+                                }
                                 .padding(horizontal = 8.dp)
                         } else {
                             Modifier
-                                .width(620.dp)
-                                .padding(horizontal = 8.dp)
+                                .fillMaxSize()
+                                .padding(horizontal = 6.dp)
                         }
 
                         LazyColumn(
                             modifier = columnModifier,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp)
+                            verticalArrangement = Arrangement.spacedBy(20.dp),
+                            contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp)
                         ) {
                             items(
                                 items = pages,
@@ -467,17 +509,17 @@ fun WordEditorScreen(
                             ) { page ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(4.dp),
+                                    shape = RoundedCornerShape(3.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = if (a4PrintMode) 6.dp else 1.dp),
                                     border = BorderStroke(0.5.dp, Color(0xFFD0D7DE))
                                 ) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = if (fitToScreen) 16.dp else 36.dp,
-                                                vertical = 20.dp
+                                                horizontal = if (a4PrintMode) 28.dp else 14.dp,
+                                                vertical = if (a4PrintMode) 24.dp else 16.dp
                                             )
                                     ) {
                                         // Header
@@ -645,6 +687,40 @@ fun WordEditorScreen(
                                             Text("Add Paragraph", style = MaterialTheme.typography.labelLarge)
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // Floating Zoom Reset Badge in A4 Print View
+                        if (a4PrintMode && (zoomScale < 0.95f || zoomScale > 1.05f)) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = 16.dp, bottom = 100.dp)
+                                    .clickable {
+                                        zoomScale = 1f
+                                        panOffset = Offset.Zero
+                                    },
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shadowElevation = 4.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${(zoomScale * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Reset Zoom",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(12.dp)
+                                    )
                                 }
                             }
                         }

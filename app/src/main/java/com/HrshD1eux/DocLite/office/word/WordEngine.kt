@@ -414,6 +414,65 @@ class WordEngine(private val context: Context) {
         }
     }
 
+    private fun extractTopLevelRawBlocks(xml: String): List<Pair<String, String>> {
+        val bStartIdx = xml.indexOf("<w:body>").takeIf { it != -1 } ?: xml.indexOf("<w:body ")
+        if (bStartIdx == -1) return emptyList()
+        val bStart = xml.indexOf('>', bStartIdx) + 1
+        val bEnd = xml.lastIndexOf("</w:body>")
+        if (bEnd == -1 || bEnd <= bStart) return emptyList()
+
+        val blocks = mutableListOf<Pair<String, String>>()
+        var pos = bStart
+        val tagPattern = java.util.regex.Pattern.compile("<(w:p|w:tbl|w:sectPr)[ >]")
+
+        while (pos < bEnd) {
+            val matcher = tagPattern.matcher(xml)
+            if (!matcher.find(pos) || matcher.start() >= bEnd) break
+            val start = matcher.start()
+            val tag = matcher.group(1) ?: break
+
+            when (tag) {
+                "w:p" -> {
+                    val end = xml.indexOf("</w:p>", start)
+                    if (end != -1 && end < bEnd) {
+                        blocks.add("p" to xml.substring(start, end + 6))
+                        pos = end + 6
+                    } else {
+                        pos = bEnd
+                    }
+                }
+                "w:tbl" -> {
+                    val end = xml.indexOf("</w:tbl>", start)
+                    if (end != -1 && end < bEnd) {
+                        blocks.add("tbl" to xml.substring(start, end + 8))
+                        pos = end + 8
+                    } else {
+                        pos = bEnd
+                    }
+                }
+                "w:sectPr" -> {
+                    val end = xml.indexOf("</w:sectPr>", start)
+                    if (end != -1 && end <= bEnd) {
+                        blocks.add("sectPr" to xml.substring(start, end + 11))
+                        pos = end + 11
+                    } else {
+                        val slashGt = xml.indexOf("/>", start)
+                        if (slashGt != -1 && slashGt <= bEnd) {
+                            blocks.add("sectPr" to xml.substring(start, slashGt + 2))
+                            pos = slashGt + 2
+                        } else {
+                            pos = bEnd
+                        }
+                    }
+                }
+                else -> {
+                    pos = matcher.end()
+                }
+            }
+        }
+        return blocks
+    }
+
     private fun parseDocXmlWithPullParser(
         zipFile: ZipFile,
         docXmlContent: String,
@@ -421,6 +480,18 @@ class WordEngine(private val context: Context) {
         uriString: String
     ): WordDocument {
         val sectPrXml = extractSectPrXml(docXmlContent)
+
+        val docTagStart = docXmlContent.indexOf("<w:document")
+        val bodyTagStart = docXmlContent.indexOf("<w:body", if (docTagStart != -1) docTagStart else 0)
+        val originalRootDocumentTag = if (docTagStart != -1 && bodyTagStart != -1) {
+            docXmlContent.substring(docTagStart, bodyTagStart).trim()
+        } else null
+
+        val rawBlocks = extractTopLevelRawBlocks(docXmlContent)
+        val rawParaBlocks = rawBlocks.filter { it.first == "p" }.map { it.second }
+        val rawTableBlocks = rawBlocks.filter { it.first == "tbl" }.map { it.second }
+        var topLevelParaIndex = 0
+        var topLevelTableIndex = 0
 
         // Parse relationships to map rId -> media path
         val imageRelsMap = mutableMapOf<String, String>()
@@ -835,13 +906,15 @@ class WordEngine(private val context: Context) {
                         "p" -> {
                             if (!insideTableCell && !insideTable) {
                                 val runs = if (currentRuns.isEmpty()) listOf(TextRun("")) else currentRuns.toList()
+                                val rawXml = rawParaBlocks.getOrNull(topLevelParaIndex++)
                                 val paragraph = Paragraph(
                                     runs = runs,
                                     alignment = paraAlignment,
                                     isHeader = isHeader,
                                     headerLevel = headerLevel,
                                     bulletPrefix = bulletPrefix,
-                                    hasPageBreakBefore = hasPageBreakBefore
+                                    hasPageBreakBefore = hasPageBreakBefore,
+                                    rawXml = rawXml
                                 )
                                 if (hasPageBreakBefore) {
                                     pageNumberCounter++
@@ -869,7 +942,8 @@ class WordEngine(private val context: Context) {
                         }
                         "tbl" -> {
                             if (currentTableRows.isNotEmpty()) {
-                                bodyElements.add(WordBodyElement.TableElement(WordTable(rows = currentTableRows.toList())))
+                                val rawXml = rawTableBlocks.getOrNull(topLevelTableIndex++)
+                                bodyElements.add(WordBodyElement.TableElement(WordTable(rows = currentTableRows.toList(), rawXml = rawXml)))
                             }
                             insideTable = false
                         }
@@ -890,7 +964,9 @@ class WordEngine(private val context: Context) {
             wordCount = wordCount,
             characterCount = charCount,
             hasUnrecognizedElements = false,
-            sectPrXml = sectPrXml
+            sectPrXml = sectPrXml,
+            originalXmlContent = docXmlContent,
+            originalRootDocumentTag = originalRootDocumentTag
         )
     }
 
@@ -1392,21 +1468,7 @@ class WordEngine(private val context: Context) {
     }
 
     suspend fun saveDocument(uri: Uri, document: WordDocument): Boolean = withContext(Dispatchers.IO) {
-        try {
-            saveDocumentViaNativeXml(uri, document)
-        } catch (t: Throwable) {
-            Log.w(TAG, "Native OpenXML save encountered issue (${t.message}), attempting POI fallback.", t)
-            val originalClassLoader = Thread.currentThread().contextClassLoader
-            try {
-                Thread.currentThread().contextClassLoader = WordEngine::class.java.classLoader
-                saveDocumentViaPoi(uri, document)
-            } catch (t2: Throwable) {
-                Log.e(TAG, "Both native and POI save failed for $uri", t2)
-                throw t2
-            } finally {
-                Thread.currentThread().contextClassLoader = originalClassLoader
-            }
-        }
+        saveDocumentViaNativeXml(uri, document)
     }
 
     private fun saveDocumentViaNativeXml(uri: Uri, document: WordDocument): Boolean {
@@ -1507,90 +1569,12 @@ class WordEngine(private val context: Context) {
         }
     }
 
-    private fun saveDocumentViaPoi(uri: Uri, document: WordDocument): Boolean {
-        try {
-            val xwpf = XWPFDocument()
-            try {
-                document.bodyElements.forEach { bodyElem ->
-                    when (bodyElem) {
-                        is WordBodyElement.ParagraphElement -> {
-                            val paraModel = bodyElem.paragraph
-                            val xwpfParagraph = xwpf.createParagraph()
-
-                            xwpfParagraph.alignment = when (paraModel.alignment) {
-                                TextAlignment.CENTER -> ParagraphAlignment.CENTER
-                                TextAlignment.RIGHT -> ParagraphAlignment.RIGHT
-                                TextAlignment.JUSTIFY -> ParagraphAlignment.BOTH
-                                else -> ParagraphAlignment.LEFT
-                            }
-
-                            paraModel.runs.forEach { runModel ->
-                                val xwpfRun = xwpfParagraph.createRun()
-                                xwpfRun.setText(runModel.text)
-                                xwpfRun.isBold = runModel.style.isBold
-                                xwpfRun.isItalic = runModel.style.isItalic
-                                if (runModel.style.isUnderline) {
-                                    xwpfRun.underline = org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE
-                                }
-                                xwpfRun.fontSize = runModel.style.fontSizeSp.toInt()
-
-                                val colorHex = runModel.style.fontColorHex.removePrefix("#")
-                                if (colorHex.length == 6) {
-                                    xwpfRun.setColor(colorHex)
-                                }
-                            }
-                        }
-                        is WordBodyElement.TableElement -> {
-                            val tableModel = bodyElem.table
-                            if (tableModel.rows.isNotEmpty()) {
-                                val xwpfTable = xwpf.createTable(tableModel.rows.size, tableModel.rows[0].cells.size)
-                                tableModel.rows.forEachIndexed { rIdx, row ->
-                                    val xwpfRow = xwpfTable.getRow(rIdx)
-                                    row.cells.forEachIndexed { cIdx, cell ->
-                                        val xwpfCell = xwpfRow.getCell(cIdx) ?: xwpfRow.createCell()
-                                        xwpfCell.text = cell.text
-                                    }
-                                }
-                            }
-                        }
-                        is WordBodyElement.PageBreakElement -> {
-                            val p = xwpf.createParagraph()
-                            p.isPageBreak = true
-                        }
-                        is WordBodyElement.ImageElement -> {}
-                    }
-                }
-
-                val outputStream = openOutputStreamRobust(uri)
-                    ?: throw java.io.IOException("Could not open destination stream for $uri")
-                outputStream.use { out ->
-                    xwpf.write(out)
-                }
-                return true
-            } finally {
-                try { xwpf.close() } catch (ignored: Throwable) {}
-            }
-        } catch (t: Throwable) {
-            Log.e(TAG, "saveDocumentViaPoi failed: ${t.message}", t)
-            return false
-        }
-    }
-
     private fun buildDocumentXml(document: WordDocument): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
-        sb.append("""<w:document """)
-        sb.append("""xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" """)
-        sb.append("""xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" """)
-        sb.append("""xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" """)
-        sb.append("""xmlns:v="urn:schemas-microsoft-com:vml" """)
-        sb.append("""xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" """)
-        sb.append("""xmlns:w10="urn:schemas-microsoft-com:office:word" """)
-        sb.append("""xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" """)
-        sb.append("""xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" """)
-        sb.append("""xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" """)
-        sb.append("""xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" """)
-        sb.append("""xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">""")
+        val rootTag = document.originalRootDocumentTag?.takeIf { it.startsWith("<w:document") }
+            ?: """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">"""
+        sb.append(rootTag)
         sb.append("<w:body>")
 
         for (elem in document.bodyElements) {
@@ -1600,99 +1584,109 @@ class WordEngine(private val context: Context) {
                 }
                 is WordBodyElement.ParagraphElement -> {
                     val p = elem.paragraph
-                    sb.append("<w:p>")
-                    sb.append("<w:pPr>")
-                    val jcVal = when (p.alignment) {
-                        TextAlignment.CENTER -> "center"
-                        TextAlignment.RIGHT -> "right"
-                        TextAlignment.JUSTIFY -> "both"
-                        TextAlignment.LEFT -> "left"
-                    }
-                    sb.append("""<w:jc w:val="$jcVal"/>""")
-
-                    if (p.hasPageBreakBefore) {
-                        sb.append("<w:pageBreakBefore/>")
-                    }
-
-                    if (p.isHeader) {
-                        val level = p.headerLevel.coerceIn(1, 3)
-                        sb.append("""<w:pStyle w:val="Heading$level"/>""")
-                    } else if (p.bulletPrefix != null) {
-                        sb.append("""<w:pStyle w:val="ListParagraph"/>""")
-                    }
-                    sb.append("</w:pPr>")
-
-                    for (run in p.runs) {
-                        if (run.rawXml != null) {
-                            sb.append(run.rawXml)
-                        } else {
-                            sb.append("<w:r>")
-                            sb.append("<w:rPr>")
-                            if (run.style.isBold || (p.isHeader && !run.style.isBold)) sb.append("<w:b/>")
-                            if (run.style.isItalic) sb.append("<w:i/>")
-                            if (run.style.isUnderline) sb.append("""<w:u w:val="single"/>""")
-                            val effectiveFontSize = if (p.isHeader) {
-                                when (p.headerLevel) {
-                                    1 -> 24f
-                                    2 -> 20f
-                                    else -> 18f
-                                }
-                            } else run.style.fontSizeSp
-                            val halfPts = (effectiveFontSize * 2).toInt()
-                            if (halfPts > 0) sb.append("""<w:sz w:val="$halfPts"/>""")
-                            val colorHex = run.style.fontColorHex.removePrefix("#")
-                            if (colorHex.length == 6) sb.append("""<w:color w:val="$colorHex"/>""")
-                            if (run.style.highlightColorHex != null) {
-                                sb.append("""<w:highlight w:val="yellow"/>""")
-                            }
-                            sb.append("</w:rPr>")
-                            sb.append("""<w:t xml:space="preserve">""")
-                            sb.append(escapeXml(run.text))
-                            sb.append("</w:t>")
-                            sb.append("</w:r>")
+                    if (!p.rawXml.isNullOrBlank()) {
+                        // NON-DESTRUCTIVE DELTA PRESERVATION: byte-for-byte exact original XML!
+                        sb.append(p.rawXml)
+                    } else {
+                        sb.append("<w:p>")
+                        sb.append("<w:pPr>")
+                        val jcVal = when (p.alignment) {
+                            TextAlignment.CENTER -> "center"
+                            TextAlignment.RIGHT -> "right"
+                            TextAlignment.JUSTIFY -> "both"
+                            TextAlignment.LEFT -> "left"
                         }
+                        sb.append("""<w:jc w:val="$jcVal"/>""")
+
+                        if (p.hasPageBreakBefore) {
+                            sb.append("<w:pageBreakBefore/>")
+                        }
+
+                        if (p.isHeader) {
+                            val level = p.headerLevel.coerceIn(1, 3)
+                            sb.append("""<w:pStyle w:val="Heading$level"/>""")
+                        } else if (p.bulletPrefix != null) {
+                            sb.append("""<w:pStyle w:val="ListParagraph"/>""")
+                        }
+                        sb.append("</w:pPr>")
+
+                        for (run in p.runs) {
+                            if (run.rawXml != null) {
+                                sb.append(run.rawXml)
+                            } else {
+                                sb.append("<w:r>")
+                                sb.append("<w:rPr>")
+                                if (run.style.isBold || (p.isHeader && !run.style.isBold)) sb.append("<w:b/>")
+                                if (run.style.isItalic) sb.append("<w:i/>")
+                                if (run.style.isUnderline) sb.append("""<w:u w:val="single"/>""")
+                                val effectiveFontSize = if (p.isHeader) {
+                                    when (p.headerLevel) {
+                                        1 -> 24f
+                                        2 -> 20f
+                                        else -> 18f
+                                    }
+                                } else run.style.fontSizeSp
+                                val halfPts = (effectiveFontSize * 2).toInt()
+                                if (halfPts > 0) sb.append("""<w:sz w:val="$halfPts"/>""")
+                                val colorHex = run.style.fontColorHex.removePrefix("#")
+                                if (colorHex.length == 6) sb.append("""<w:color w:val="$colorHex"/>""")
+                                if (run.style.highlightColorHex != null) {
+                                    sb.append("""<w:highlight w:val="yellow"/>""")
+                                }
+                                sb.append("</w:rPr>")
+                                sb.append("""<w:t xml:space="preserve">""")
+                                sb.append(escapeXml(run.text))
+                                sb.append("</w:t>")
+                                sb.append("</w:r>")
+                            }
+                        }
+                        sb.append("</w:p>")
                     }
-                    sb.append("</w:p>")
                 }
                 is WordBodyElement.TableElement -> {
                     val table = elem.table
-                    val numCols = table.rows.maxOfOrNull { it.cells.size }?.coerceAtLeast(1) ?: 1
-                    val colWidthDxa = (9000 / numCols).coerceAtLeast(720)
+                    if (!table.rawXml.isNullOrBlank()) {
+                        // NON-DESTRUCTIVE DELTA PRESERVATION: byte-for-byte exact original XML!
+                        sb.append(table.rawXml)
+                    } else {
+                        val numCols = table.rows.maxOfOrNull { it.cells.size }?.coerceAtLeast(1) ?: 1
+                        val colWidthDxa = (9000 / numCols).coerceAtLeast(720)
 
-                    sb.append("<w:tbl>")
-                    sb.append("<w:tblPr>")
-                    sb.append("""<w:tblW w:w="0" w:type="auto"/>""")
-                    sb.append("""<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders>""")
-                    sb.append("</w:tblPr>")
+                        sb.append("<w:tbl>")
+                        sb.append("<w:tblPr>")
+                        sb.append("""<w:tblW w:w="0" w:type="auto"/>""")
+                        sb.append("""<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders>""")
+                        sb.append("</w:tblPr>")
 
-                    sb.append("<w:tblGrid>")
-                    for (c in 0 until numCols) {
-                        sb.append("""<w:gridCol w:w="$colWidthDxa"/>""")
-                    }
-                    sb.append("</w:tblGrid>")
-
-                    for (row in table.rows) {
-                        sb.append("<w:tr>")
-                        for (cell in row.cells) {
-                            sb.append("<w:tc>")
-                            sb.append("<w:tcPr>")
-                            sb.append("""<w:tcW w:w="$colWidthDxa" w:type="dxa"/>""")
-                            sb.append("</w:tcPr>")
-                            sb.append("<w:p>")
-                            sb.append("<w:r>")
-                            if (cell.isHeader) {
-                                sb.append("<w:rPr><w:b/></w:rPr>")
-                            }
-                            sb.append("""<w:t xml:space="preserve">""")
-                            sb.append(escapeXml(cell.text))
-                            sb.append("</w:t>")
-                            sb.append("</w:r>")
-                            sb.append("</w:p>")
-                            sb.append("</w:tc>")
+                        sb.append("<w:tblGrid>")
+                        for (c in 0 until numCols) {
+                            sb.append("""<w:gridCol w:w="$colWidthDxa"/>""")
                         }
-                        sb.append("</w:tr>")
+                        sb.append("</w:tblGrid>")
+
+                        for (row in table.rows) {
+                            sb.append("<w:tr>")
+                            for (cell in row.cells) {
+                                sb.append("<w:tc>")
+                                sb.append("<w:tcPr>")
+                                sb.append("""<w:tcW w:w="$colWidthDxa" w:type="dxa"/>""")
+                                sb.append("</w:tcPr>")
+                                sb.append("<w:p>")
+                                sb.append("<w:r>")
+                                if (cell.isHeader) {
+                                    sb.append("<w:rPr><w:b/></w:rPr>")
+                                }
+                                sb.append("""<w:t xml:space="preserve">""")
+                                sb.append(escapeXml(cell.text))
+                                sb.append("</w:t>")
+                                sb.append("</w:r>")
+                                sb.append("</w:p>")
+                                sb.append("</w:tc>")
+                            }
+                            sb.append("</w:tr>")
+                        }
+                        sb.append("</w:tbl>")
                     }
-                    sb.append("</w:tbl>")
                 }
                 is WordBodyElement.ImageElement -> {
                     if (!elem.rawDrawingXml.isNullOrBlank()) {

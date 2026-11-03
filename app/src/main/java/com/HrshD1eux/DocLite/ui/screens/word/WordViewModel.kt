@@ -198,7 +198,7 @@ class WordViewModel(
             listOf(TextRun(text = text, style = existingRuns.first().style))
         }
 
-        val updatedParagraph = p.copy(runs = updatedRuns)
+        val updatedParagraph = p.copy(runs = updatedRuns, rawXml = null)
         val updatedElements = currentElements.toMutableList()
         updatedElements[bodyIndex] = WordBodyElement.ParagraphElement(updatedParagraph)
 
@@ -312,12 +312,12 @@ class WordViewModel(
             is WordBodyElement.ParagraphElement -> {
                 val p = elem.paragraph
                 WordBodyElement.ParagraphElement(
-                    p.copy(id = java.util.UUID.randomUUID().toString())
+                    p.copy(id = java.util.UUID.randomUUID().toString(), rawXml = null)
                 )
             }
             is WordBodyElement.TableElement -> {
                 WordBodyElement.TableElement(
-                    elem.table.copy(id = java.util.UUID.randomUUID().toString())
+                    elem.table.copy(id = java.util.UUID.randomUUID().toString(), rawXml = null)
                 )
             }
             is WordBodyElement.ImageElement -> {
@@ -503,7 +503,7 @@ class WordViewModel(
         updatedRows[rowIndex] = row.copy(cells = updatedCells)
 
         val updatedElements = currentState.document.bodyElements.toMutableList()
-        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows))
+        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows, rawXml = null))
 
         _uiState.value = currentState.copy(
             document = currentState.document.copy(bodyElements = updatedElements),
@@ -522,7 +522,7 @@ class WordViewModel(
         val updatedRows = table.rows + newRow
 
         val updatedElements = currentState.document.bodyElements.toMutableList()
-        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows))
+        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows, rawXml = null))
 
         _uiState.value = currentState.copy(
             document = currentState.document.copy(bodyElements = updatedElements),
@@ -540,7 +540,7 @@ class WordViewModel(
         val updatedRows = table.rows.toMutableList().apply { removeAt(rowIndex) }
 
         val updatedElements = currentState.document.bodyElements.toMutableList()
-        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows))
+        updatedElements[elementIndex] = WordBodyElement.TableElement(table.copy(rows = updatedRows, rawXml = null))
 
         _uiState.value = currentState.copy(
             document = currentState.document.copy(bodyElements = updatedElements),
@@ -556,7 +556,7 @@ class WordViewModel(
         val elem = elements.getOrNull(activeIdx) as? WordBodyElement.ParagraphElement ?: return
         commitUndoImmediate(elements)
 
-        val updatedParagraph = transform(elem.paragraph)
+        val updatedParagraph = transform(elem.paragraph).copy(rawXml = null)
         val updatedElements = elements.toMutableList()
         updatedElements[activeIdx] = WordBodyElement.ParagraphElement(updatedParagraph)
 
