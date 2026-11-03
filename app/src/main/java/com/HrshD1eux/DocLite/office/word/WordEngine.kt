@@ -643,14 +643,14 @@ class WordEngine(private val context: Context) {
         var pDefaultBold = false
         var pDefaultItalic = false
         var pDefaultUnderline = false
-        var pDefaultFontSize = 16f
+        var pDefaultFontSize = 12f  // Word default body text = 12pt
         var pDefaultColor = "#1C1B1F"
 
         var insideRun = false
         var isBold = false
         var isItalic = false
         var isUnderline = false
-        var fontSizeSp = 16f
+        var fontSizeSp = 12f  // Word default = 12pt
         var fontColorHex = "#1C1B1F"
         var highlightColorHex: String? = null
         var insideTextTag = false
@@ -668,7 +668,7 @@ class WordEngine(private val context: Context) {
                     when (tag) {
                         "tbl" -> {
                             insideTable = true
-                            currentTableHasBorders = true
+                            currentTableHasBorders = true  // default true for standard Word tables; set false when all borders are nil
                             insideTblBorders = false
                             nilBorderCount = 0
                             totalBorderCount = 0
@@ -681,12 +681,25 @@ class WordEngine(private val context: Context) {
                                 totalBorderCount = 0
                             }
                         }
+                        "tblStyle" -> {
+                            // TableGrid, TableNormal, and any style with "grid" or "table" in name imply borders
+                            if (insideTable && !insideTableCell) {
+                                val styleVal = getValAttr(parser)?.lowercase() ?: ""
+                                if (styleVal.contains("grid") || styleVal == "tablegrid" || styleVal == "normaltable" ||
+                                    styleVal.contains("bordered") || styleVal.contains("border")) {
+                                    currentTableHasBorders = true
+                                }
+                            }
+                        }
                         "top", "left", "bottom", "right", "insideH", "insideV" -> {
                             if (insideTblBorders) {
                                 totalBorderCount++
                                 val valAttr = getValAttr(parser)
                                 if (valAttr != null && (valAttr.equals("nil", ignoreCase = true) || valAttr.equals("none", ignoreCase = true))) {
                                     nilBorderCount++
+                                } else {
+                                    // At least one actual border defined → this table has borders
+                                    currentTableHasBorders = true
                                 }
                             }
                         }
@@ -726,7 +739,7 @@ class WordEngine(private val context: Context) {
                             pDefaultBold = false
                             pDefaultItalic = false
                             pDefaultUnderline = false
-                            pDefaultFontSize = 16f
+                            pDefaultFontSize = 12f  // Word default body text = 12pt
                             pDefaultColor = "#1C1B1F"
                         }
                         "pPr" -> {
@@ -847,10 +860,10 @@ class WordEngine(private val context: Context) {
                                 val sizeSp = halfPts / 2f
                                 if (insideRun) {
                                     fontSizeSp = sizeSp
-                                    if (fontSizeSp >= 20f && fontColorHex == "#1C1B1F") fontColorHex = "#1F497D"
+                                    if (fontSizeSp >= 22f && fontColorHex == "#1C1B1F") fontColorHex = "#1F497D"
                                 } else if (insidePPr) {
                                     pDefaultFontSize = sizeSp
-                                    if (pDefaultFontSize >= 20f && pDefaultColor == "#1C1B1F") pDefaultColor = "#1F497D"
+                                    if (pDefaultFontSize >= 22f && pDefaultColor == "#1C1B1F") pDefaultColor = "#1F497D"
                                 }
                             }
                         }
@@ -1053,6 +1066,7 @@ class WordEngine(private val context: Context) {
                         }
                         "tblBorders" -> {
                             if (insideTblBorders) {
+                                // If ALL declared borders are nil, explicitly mark as borderless
                                 if (totalBorderCount > 0 && nilBorderCount == totalBorderCount) {
                                     currentTableHasBorders = false
                                 }

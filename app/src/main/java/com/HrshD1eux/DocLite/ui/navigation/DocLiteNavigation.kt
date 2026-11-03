@@ -76,6 +76,7 @@ fun DocLiteNavigation(
     initialIntentUri: Uri? = null,
     initialIntentFormat: DocumentFormat? = null,
     startScreen: com.HrshD1eux.DocLite.models.StartScreen = com.HrshD1eux.DocLite.models.StartScreen.HOME,
+    isExternalIntent: Boolean = false,
     onIntentConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -84,7 +85,7 @@ fun DocLiteNavigation(
 
     val context = LocalContext.current
     var isOpenedFromExternalIntent by rememberSaveable {
-        mutableStateOf(initialIntentUri != null)
+        mutableStateOf(isExternalIntent || initialIntentUri != null)
     }
 
     LaunchedEffect(initialIntentUri, initialIntentFormat) {
@@ -96,7 +97,7 @@ fun DocLiteNavigation(
     }
 
     val onEditorBack: () -> Unit = {
-        if (isOpenedFromExternalIntent) {
+        if (isOpenedFromExternalIntent || isExternalIntent) {
             (context as? Activity)?.finish()
         } else {
             if (!navController.popBackStack()) {

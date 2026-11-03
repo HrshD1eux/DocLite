@@ -25,6 +25,7 @@ import android.util.Log
 class MainActivity : ComponentActivity() {
 
     private val _intentDataFlow = MutableStateFlow<Pair<Uri?, DocumentFormat?>>(Pair(null, null))
+    private var isExternalIntent = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
                     DocLiteNavigation(
                         initialIntentUri = intentData.first,
                         initialIntentFormat = intentData.second,
+                        isExternalIntent = isExternalIntent,
                         startScreen = settings.startScreen,
                         onIntentConsumed = {
                             _intentDataFlow.value = Pair(null, null)
@@ -69,6 +71,7 @@ class MainActivity : ComponentActivity() {
         val hasData = incomingIntent?.data != null
         val isSupportedAction = incomingIntent?.action == Intent.ACTION_VIEW || incomingIntent?.action == Intent.ACTION_EDIT
         if (isSupportedAction && hasData) {
+            isExternalIntent = true
             val rawUri = incomingIntent!!.data!!
             try {
                 if (rawUri.scheme == "content") {

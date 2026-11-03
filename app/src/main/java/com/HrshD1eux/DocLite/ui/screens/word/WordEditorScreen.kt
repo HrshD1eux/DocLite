@@ -519,8 +519,8 @@ fun WordEditorScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = if (a4PrintMode) 16.dp else 12.dp,
-                                                vertical = if (a4PrintMode) 20.dp else 14.dp
+                                                horizontal = if (a4PrintMode) 10.dp else 10.dp,
+                                                vertical = if (a4PrintMode) 18.dp else 14.dp
                                             )
                                     ) {
 
@@ -1134,8 +1134,9 @@ private fun PageBreakCutDivider(
 
 @Composable
 private fun ViewModeParagraph(paragraph: Paragraph) {
-    val maxFontSize = paragraph.runs.maxOfOrNull { it.style.fontSizeSp } ?: 16f
-    val isTitleOrHeading = paragraph.isHeader || paragraph.headerLevel > 0 || (maxFontSize >= 18f && paragraph.alignment == TextAlignment.CENTER)
+    val maxFontSize = paragraph.runs.maxOfOrNull { it.style.fontSizeSp } ?: 12f
+    val isTitleOrHeading = paragraph.isHeader || paragraph.headerLevel > 0 ||
+        (maxFontSize >= 20f && paragraph.alignment == TextAlignment.CENTER)
     val isBlankPara = paragraph.getPlainText().isBlank()
 
     val annotatedText = buildAnnotatedString {
@@ -1216,11 +1217,11 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
         when {
             numCols == 5 -> {
                 when (cIdx) {
-                    0 -> 1.05f // S.No. (fits "S.No." and 2-digit serial on 1 line)
-                    1 -> 3.85f // Practical Title (wide, wraps cleanly)
-                    2 -> 1.55f // Date (fits "11/08/2026" or "11/08/26" on 1 line without wrapping)
-                    3 -> 1.25f // Page No. (fits "Page No." and "37-38" on 1 line)
-                    4 -> 1.50f // Teacher's Sign
+                    0 -> 0.95f // S.No. (fits on 1 line without wrapping)
+                    1 -> 3.75f // Practical Title (wide, wraps cleanly)
+                    2 -> 1.45f // Date (fits "11/08/2026" or "11/08/26" on 1 line)
+                    3 -> 1.15f // Page No. (fits "Page No." and "37-38")
+                    4 -> 1.45f // Teacher's Sign (fits comfortably on mobile)
                     else -> 1.0f
                 }
             }
@@ -1356,14 +1357,16 @@ private fun InteractiveTableCard(
                                     .background(cellBg)
                             }
 
-                            val cellPadding = if (numCols >= 4) {
+                            val cellPadding = if (numCols >= 5) {
+                                PaddingValues(horizontal = 1.dp, vertical = if (isHeaderCell) 5.dp else 3.5.dp)
+                            } else if (numCols >= 4) {
                                 PaddingValues(horizontal = 2.dp, vertical = if (isHeaderCell) 6.dp else 4.dp)
                             } else {
                                 PaddingValues(horizontal = 4.dp, vertical = if (isHeaderCell) 8.dp else 5.dp)
                             }
 
-                            val cellFontSize = if (numCols >= 5) 10.sp else if (numCols >= 4) 10.5.sp else 11.5.sp
-                            val cellLineHeight = if (numCols >= 5) 13.sp else if (numCols >= 4) 14.sp else 15.sp
+                            val cellFontSize = if (numCols >= 5) 9.5.sp else if (numCols >= 4) 10.5.sp else 11.5.sp
+                            val cellLineHeight = if (numCols >= 5) 12.sp else if (numCols >= 4) 14.sp else 15.sp
 
                             Box(
                                 modifier = cellModifier
@@ -1519,8 +1522,8 @@ private fun DocumentImageItem(
                 )
             }
         } else {
-            val maxW = (element.widthDp.takeIf { it in 60..240 } ?: 180).dp
-            val maxH = (element.heightDp.takeIf { it in 40..220 } ?: 170).dp
+            val maxW = (element.widthDp.takeIf { it in 60..380 } ?: 260).dp
+            val maxH = (element.heightDp.takeIf { it in 40..420 } ?: 260).dp
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(fileModel)
@@ -1569,7 +1572,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 490 // Calibrated to Word's A4 vertical height capacity
+    val maxWeightPerPage = 230 // Calibrated to Word's authentic A4/Letter page height (52 pages for DSA manual)
 
     for (elemIndex in bodyElements.indices) {
         val element = bodyElements[elemIndex]
