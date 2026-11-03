@@ -2,6 +2,7 @@ package com.HrshD1eux.DocLite.office.excel
 
 import android.content.Context
 import android.net.Uri
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import com.HrshD1eux.DocLite.models.Cell
 import com.HrshD1eux.DocLite.models.Sheet
 import com.HrshD1eux.DocLite.models.SpreadsheetDocument
@@ -32,11 +33,11 @@ class ExcelEngine(private val context: Context) {
 
         val tempFile = File.createTempFile("xlsx_cache_", ".tmp", context.cacheDir)
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            (UriResolver.openInputStream(context, uri) ?: throw java.io.FileNotFoundException("Could not open file: $fileName")).use { input ->
                 tempFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
-            } ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
+            }
 
             val workbook = try {
                 if (password.isNullOrEmpty()) {
@@ -112,7 +113,7 @@ class ExcelEngine(private val context: Context) {
         var maxRow = 0
         var maxCol = 0
 
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+        (UriResolver.openInputStream(context, uri) ?: throw java.io.FileNotFoundException("Could not open CSV file: $fileName")).use { inputStream ->
             val reader = InputStreamReader(inputStream)
             val csvReader = CSVReaderBuilder(reader).build()
             var rowIdx = 0
@@ -260,16 +261,7 @@ class ExcelEngine(private val context: Context) {
         var workbook: Workbook? = null
         try {
             // First read the existing workbook to preserve non-data elements
-            val inputStream = if (uri.scheme == "file") {
-                val f = File(uri.path ?: "")
-                if (f.exists() && f.canRead()) java.io.FileInputStream(f) else null
-            } else {
-                try {
-                    context.contentResolver.openInputStream(uri)
-                } catch (e: Exception) {
-                    null
-                }
-            }
+            val inputStream = UriResolver.openInputStream(context, uri)
 
             inputStream?.use { stream ->
                 try {
@@ -347,12 +339,7 @@ class ExcelEngine(private val context: Context) {
             // Force formula recalculation on opening in Excel
             wb.forceFormulaRecalculation = true
 
-            val outputStream = if (uri.scheme == "file") {
-                val localFile = File(uri.path ?: "")
-                java.io.FileOutputStream(localFile)
-            } else {
-                context.contentResolver.openOutputStream(uri, "wt")
-            }
+            val outputStream = UriResolver.openOutputStream(context, uri)
 
             outputStream?.use { stream ->
                 wb.write(stream)
@@ -386,21 +373,6 @@ class ExcelEngine(private val context: Context) {
     }
 
     private fun getFileName(uri: Uri): String {
-        var result: String? = null
-        if (uri.scheme == "content") {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) result = it.getString(nameIndex)
-                }
-            }
-        }
-        if (result == null) {
-            result = uri.path
-            val cut = result?.lastIndexOf('/') ?: -1
-            if (cut != -1) result = result?.substring(cut + 1)
-        }
-        return result ?: "spreadsheet.xlsx"
+        return UriResolver.getDisplayName(context, uri, "spreadsheet.xlsx")
     }
 }

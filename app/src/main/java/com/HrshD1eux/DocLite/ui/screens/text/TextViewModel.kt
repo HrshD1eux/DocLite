@@ -3,6 +3,7 @@ package com.HrshD1eux.DocLite.ui.screens.text
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import androidx.lifecycle.viewModelScope
 import com.HrshD1eux.DocLite.models.DocumentFile
 import com.HrshD1eux.DocLite.models.DocumentFormat
@@ -48,9 +49,10 @@ class TextViewModel(
             _uiState.value = TextUiState.Loading
             try {
                 val content = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
-                        it.readText()
-                    } ?: ""
+                    (UriResolver.openInputStream(context, uri) ?: throw java.io.FileNotFoundException("Could not open text file"))
+                        .bufferedReader(Charsets.UTF_8).use {
+                            it.readText()
+                        }
                 }
                 originalText = content
                 undoStack.clear()
@@ -149,9 +151,11 @@ class TextViewModel(
             try {
                 withContext(Dispatchers.IO) {
                     val uri = currentState.fileUri
-                    context.contentResolver.openOutputStream(uri, "rwt")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                    val out = UriResolver.openOutputStream(context, uri)
+                        ?: throw java.io.IOException("Cannot open output stream for $uri")
+                    out.bufferedWriter(Charsets.UTF_8).use { writer ->
                         writer.write(currentState.text)
-                    } ?: throw java.io.IOException("Cannot open output stream for $uri")
+                    }
                 }
                 originalText = currentState.text
                 _uiState.value = currentState.copy(
@@ -200,21 +204,6 @@ class TextViewModel(
     }
 
     private fun getFileName(uri: Uri): String {
-        var result: String? = null
-        if (uri.scheme == "content") {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) result = it.getString(nameIndex)
-                }
-            }
-        }
-        if (result == null) {
-            result = uri.path
-            val cut = result?.lastIndexOf('/') ?: -1
-            if (cut != -1) result = result?.substring(cut + 1)
-        }
-        return result ?: "document.txt"
+        return UriResolver.getDisplayName(context, uri, "document.txt")
     }
 }

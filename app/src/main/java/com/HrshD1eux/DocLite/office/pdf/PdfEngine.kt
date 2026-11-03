@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import android.os.ParcelFileDescriptor
 import com.HrshD1eux.DocLite.models.AnnotationType
 import com.HrshD1eux.DocLite.models.PdfAnnotation
@@ -419,15 +420,6 @@ class PdfEngine(private val context: Context) {
     }
 
     private fun openInputStreamSafe(uri: Uri): java.io.InputStream? {
-        return if (uri.scheme == "file") {
-            val f = File(uri.path ?: "")
-            if (f.exists()) java.io.FileInputStream(f) else null
-        } else {
-            try {
-                context.contentResolver.openInputStream(uri)
-            } catch (e: Exception) {
-                null
-            }
-        }
+        return UriResolver.openInputStream(context, uri)
     }
 }

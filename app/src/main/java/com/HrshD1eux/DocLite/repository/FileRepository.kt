@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import androidx.core.content.ContextCompat
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import com.HrshD1eux.DocLite.database.dao.FavoriteFileDao
 import com.HrshD1eux.DocLite.database.dao.PasswordProtectionDao
 import com.HrshD1eux.DocLite.database.dao.RecentFileDao
@@ -127,25 +128,30 @@ class FileRepository(
     }
 
     suspend fun recordRecentFile(file: DocumentFile) = withContext(Dispatchers.IO) {
-        val uri = Uri.parse(file.uriString)
+        var uri = Uri.parse(file.uriString)
+        var path = file.path
+
         if (uri.scheme == "content") {
-            val isPersisted = try {
-                context.contentResolver.persistedUriPermissions.any { it.uri == uri }
-            } catch (e: Exception) { false }
-            
-            // Allow media store URIs since they don't require persistable permission if we have read external storage
-            val isMediaStore = uri.authority == "media"
-            
-            if (!isPersisted && !isMediaStore) {
-                return@withContext // Do not save temporary URIs
+            val physical = UriResolver.resolvePhysicalFile(context, uri)
+            if (physical != null && physical.exists()) {
+                uri = Uri.fromFile(physical)
+                path = physical.absolutePath
+            } else {
+                val isPersisted = try {
+                    context.contentResolver.persistedUriPermissions.any { it.uri == uri }
+                } catch (e: Exception) { false }
+                val isMediaStore = uri.authority == "media"
+                if (!isPersisted && !isMediaStore) {
+                    return@withContext // Do not save temporary URIs that cannot be re-accessed
+                }
             }
         }
         
         recentFileDao.insertOrUpdate(
             RecentFileEntity(
-                uriString = file.uriString,
+                uriString = uri.toString(),
                 name = file.name,
-                path = file.path,
+                path = path,
                 sizeBytes = file.sizeBytes,
                 formatName = file.format.name,
                 lastOpenedTimestamp = System.currentTimeMillis()

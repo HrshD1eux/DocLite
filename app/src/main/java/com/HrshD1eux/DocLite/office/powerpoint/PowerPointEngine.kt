@@ -2,6 +2,7 @@ package com.HrshD1eux.DocLite.office.powerpoint
 
 import android.content.Context
 import android.net.Uri
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import com.HrshD1eux.DocLite.models.ElementType
 import com.HrshD1eux.DocLite.models.PresentationDocument
 import com.HrshD1eux.DocLite.models.Slide
@@ -28,11 +29,11 @@ class PowerPointEngine(private val context: Context) {
 
         val tempFile = File.createTempFile("pptx_cache_", ".tmp", context.cacheDir)
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            (UriResolver.openInputStream(context, uri) ?: throw java.io.FileNotFoundException("Could not open file: $fileName")).use { input ->
                 tempFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
-            } ?: throw java.io.FileNotFoundException("Could not open file: $fileName")
+            }
 
             val pkg = try {
                 OPCPackage.open(tempFile, PackageAccess.READ)
@@ -121,7 +122,7 @@ class PowerPointEngine(private val context: Context) {
                     }
                 }
 
-                context.contentResolver.openOutputStream(uri, "rwt")?.use { outputStream ->
+                UriResolver.openOutputStream(context, uri)?.use { outputStream ->
                     slideshow.write(outputStream)
                 } ?: return@withContext false
                 true
@@ -138,21 +139,6 @@ class PowerPointEngine(private val context: Context) {
     }
 
     private fun getFileName(uri: Uri): String {
-        var result: String? = null
-        if (uri.scheme == "content") {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) result = it.getString(nameIndex)
-                }
-            }
-        }
-        if (result == null) {
-            result = uri.path
-            val cut = result?.lastIndexOf('/') ?: -1
-            if (cut != -1) result = result?.substring(cut + 1)
-        }
-        return result ?: "presentation.pptx"
+        return UriResolver.getDisplayName(context, uri, "presentation.pptx")
     }
 }

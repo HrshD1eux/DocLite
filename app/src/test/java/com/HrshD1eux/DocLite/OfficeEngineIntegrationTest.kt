@@ -1274,4 +1274,41 @@ class OfficeEngineIntegrationTest {
 
         testDoc.delete()
     }
+
+    @Test
+    fun uriResolver_resolvesFileProviderUrisAndFallbacksGracefully() {
+        val testFile = File(context.cacheDir, "uri_resolver_test.docx")
+        testFile.writeText("Test File Provider Resolution")
+
+        // 1. Direct file URI
+        val fileUri = Uri.fromFile(testFile)
+        val resolvedDirect = com.HrshD1eux.DocLite.core.utils.UriResolver.resolvePhysicalFile(context, fileUri)
+        assertNotNull(resolvedDirect)
+        assertEquals(testFile.canonicalPath, resolvedDirect!!.canonicalPath)
+
+        // 2. Simulated FileProvider URI with /external_files/
+        // If file is under external storage, /external_files/ mapping resolves directly
+        val extStorage = android.os.Environment.getExternalStorageDirectory()
+        val mockExtFile = File(extStorage, "TestExternalDoc.docx")
+        val simulatedUri = Uri.parse("content://com.Hrshd1eux.filemanager.fileprovider/external_files/TestExternalDoc.docx")
+        
+        // Display name extraction should never throw SecurityException
+        val displayName = com.HrshD1eux.DocLite.core.utils.UriResolver.getDisplayName(context, simulatedUri)
+        assertEquals("TestExternalDoc.docx", displayName)
+
+        // 3. Fallback openInputStream & openOutputStream
+        val stream = com.HrshD1eux.DocLite.core.utils.UriResolver.openInputStream(context, fileUri)
+        assertNotNull(stream)
+        val content = stream!!.bufferedReader().readText()
+        assertEquals("Test File Provider Resolution", content)
+        stream.close()
+
+        val outStream = com.HrshD1eux.DocLite.core.utils.UriResolver.openOutputStream(context, fileUri)
+        assertNotNull(outStream)
+        outStream!!.write("Updated Content".toByteArray())
+        outStream.close()
+
+        assertEquals("Updated Content", testFile.readText())
+        testFile.delete()
+    }
 }

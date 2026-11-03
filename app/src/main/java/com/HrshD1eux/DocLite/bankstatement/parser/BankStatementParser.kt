@@ -2,6 +2,7 @@ package com.HrshD1eux.DocLite.bankstatement.parser
 
 import android.content.Context
 import android.net.Uri
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import com.HrshD1eux.DocLite.bankstatement.model.BankTransaction
 import com.HrshD1eux.DocLite.bankstatement.model.PartySummary
 import com.HrshD1eux.DocLite.bankstatement.model.StatementAnalysisResult
@@ -67,7 +68,7 @@ class BankStatementParser(private val context: Context) {
         val resultRows = mutableListOf<List<String>>()
         PDFBoxResourceLoader.init(context.applicationContext)
 
-        val inputStream = context.contentResolver.openInputStream(uri)
+        val inputStream = UriResolver.openInputStream(context, uri)
             ?: throw java.io.FileNotFoundException("Could not open PDF file")
 
         val document = try {
@@ -149,7 +150,7 @@ class BankStatementParser(private val context: Context) {
 
     private fun parseCsvRows(uri: Uri): List<List<String>> {
         val rows = mutableListOf<List<String>>()
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+        UriResolver.openInputStream(context, uri)?.use { inputStream ->
             val reader = InputStreamReader(inputStream)
             val csvReader = CSVReaderBuilder(reader).build()
             
@@ -167,7 +168,7 @@ class BankStatementParser(private val context: Context) {
     private fun parseExcelRows(uri: Uri, password: String?): List<List<String>> {
         val resultRows = mutableListOf<List<String>>()
         
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+        UriResolver.openInputStream(context, uri)?.use { inputStream ->
             val workbook = if (password.isNullOrEmpty()) {
                 WorkbookFactory.create(inputStream)
             } else {
@@ -480,21 +481,6 @@ class BankStatementParser(private val context: Context) {
     }
 
     private fun getFileName(uri: Uri): String {
-        var result: String? = null
-        if (uri.scheme == "content") {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) result = it.getString(nameIndex)
-                }
-            }
-        }
-        if (result == null) {
-            result = uri.path
-            val cut = result?.lastIndexOf('/') ?: -1
-            if (cut != -1) result = result?.substring(cut + 1)
-        }
-        return result ?: "Bank_Statement.xlsx"
+        return UriResolver.getDisplayName(context, uri, "Bank_Statement.xlsx")
     }
 }

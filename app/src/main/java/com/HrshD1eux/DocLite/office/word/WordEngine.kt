@@ -3,6 +3,7 @@ package com.HrshD1eux.DocLite.office.word
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import com.HrshD1eux.DocLite.models.Paragraph
 import com.HrshD1eux.DocLite.models.TextAlignment
 import com.HrshD1eux.DocLite.models.TextRun
@@ -1799,61 +1800,14 @@ class WordEngine(private val context: Context) {
     }
 
     private fun getFileName(uri: Uri): String {
-        var result: String? = null
-        if (uri.scheme == "content") {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) {
-                        result = it.getString(nameIndex)
-                    }
-                }
-            }
-        }
-        if (result == null) {
-            result = uri.path
-            val cut = result?.lastIndexOf('/') ?: -1
-            if (cut != -1) {
-                result = result?.substring(cut + 1)
-            }
-        }
-        return result ?: "document.docx"
+        return UriResolver.getDisplayName(context, uri, "document.docx")
     }
 
     private fun openInputStreamRobust(uri: Uri): InputStream? {
-        return try {
-            if (uri.scheme == "file") {
-                val file = File(uri.path ?: "")
-                if (file.exists() && file.canRead()) java.io.FileInputStream(file)
-                else context.contentResolver.openInputStream(uri)
-            } else {
-                context.contentResolver.openInputStream(uri)
-            }
-        } catch (t: Throwable) {
-            null
-        }
+        return UriResolver.openInputStream(context, uri)
     }
 
     private fun openOutputStreamRobust(uri: Uri): OutputStream? {
-        return try {
-            if (uri.scheme == "file") {
-                val file = File(uri.path ?: "")
-                file.parentFile?.mkdirs()
-                java.io.FileOutputStream(file)
-            } else {
-                try {
-                    context.contentResolver.openOutputStream(uri, "wt")
-                } catch (e1: Exception) {
-                    try {
-                        context.contentResolver.openOutputStream(uri, "rwt")
-                    } catch (e2: Exception) {
-                        context.contentResolver.openOutputStream(uri)
-                    }
-                }
-            }
-        } catch (t: Throwable) {
-            null
-        }
+        return UriResolver.openOutputStream(context, uri)
     }
 }

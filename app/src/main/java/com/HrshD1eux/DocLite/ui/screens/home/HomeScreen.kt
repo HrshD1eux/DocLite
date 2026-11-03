@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -156,18 +157,10 @@ fun HomeScreen(
                 // Not all providers support persistable permissions
             }
             
-            var displayName: String? = null
-            if (uri.scheme == "content") {
-                try {
-                    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            displayName = cursor.getString(0)
-                        }
-                    }
-                } catch (ignored: Throwable) {}
-            }
-            val extFromName = (displayName ?: uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase()
-            val mimeType = context.contentResolver.getType(uri)
+            val permanentUri = UriResolver.getCanonicalPermanentUri(context, uri)
+            val displayName = UriResolver.getDisplayName(context, permanentUri)
+            val extFromName = displayName.substringAfterLast('.', "").lowercase()
+            val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
 
             val format = if (extFromName.isNotEmpty()) {
                 DocumentFormat.fromExtension(extFromName)
@@ -184,7 +177,7 @@ fun HomeScreen(
             } else {
                 DocumentFormat.WORD
             }
-            onOpenUri(uri, format)
+            onOpenUri(permanentUri, format)
         }
     }
 

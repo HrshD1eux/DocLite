@@ -12,6 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.HrshD1eux.DocLite.core.utils.UriResolver
 import com.HrshD1eux.DocLite.models.DocumentFormat
 import com.HrshD1eux.DocLite.models.ThemeMode
 import com.HrshD1eux.DocLite.ui.navigation.DocLiteNavigation
@@ -65,31 +66,26 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(incomingIntent: Intent?) {
-        if (incomingIntent?.action == Intent.ACTION_VIEW && incomingIntent.data != null) {
-            val uri = incomingIntent.data!!
+        val hasData = incomingIntent?.data != null
+        val isSupportedAction = incomingIntent?.action == Intent.ACTION_VIEW || incomingIntent?.action == Intent.ACTION_EDIT
+        if (isSupportedAction && hasData) {
+            val rawUri = incomingIntent!!.data!!
             try {
-                if (uri.scheme == "content") {
+                if (rawUri.scheme == "content") {
                     contentResolver.takePersistableUriPermission(
-                        uri,
+                        rawUri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
                 }
             } catch (e: Exception) {
-                Log.w("MainActivity", "Could not take persistable permission for $uri", e)
+                Log.w("MainActivity", "Could not take persistable permission for $rawUri", e)
             }
-            
-            var displayName: String? = null
-            if (uri.scheme == "content") {
-                try {
-                    contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            displayName = cursor.getString(0)
-                        }
-                    }
-                } catch (ignored: Throwable) {}
-            }
-            val extFromName = (displayName ?: uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase()
-            val mimeType = contentResolver.getType(uri)
+
+            // Canonicalize to direct physical URI if accessible on storage, preventing FileProvider permission expirations
+            val effectiveUri = UriResolver.getCanonicalPermanentUri(this, rawUri)
+            val displayName = UriResolver.getDisplayName(this, effectiveUri)
+            val extFromName = displayName.substringAfterLast('.', "").lowercase()
+            val mimeType = try { contentResolver.getType(rawUri) } catch (t: Throwable) { null }
             val format = if (extFromName.isNotEmpty()) {
                 DocumentFormat.fromExtension(extFromName)
             } else if (mimeType != null) {
@@ -105,8 +101,8 @@ class MainActivity : ComponentActivity() {
             } else {
                 DocumentFormat.WORD
             }
-            
-            _intentDataFlow.value = Pair(uri, format)
+
+            _intentDataFlow.value = Pair(effectiveUri, format)
         }
     }
 }
