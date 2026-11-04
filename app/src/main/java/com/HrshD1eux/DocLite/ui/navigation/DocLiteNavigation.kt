@@ -1,5 +1,7 @@
 package com.HrshD1eux.DocLite.ui.navigation
 
+import android.content.Intent
+
 import android.app.Activity
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
@@ -97,11 +99,13 @@ fun DocLiteNavigation(
     }
 
     val onEditorBack: () -> Unit = {
-        if (isOpenedFromExternalIntent || isExternalIntent) {
-            (context as? Activity)?.finish()
+        val activity = context as? Activity
+        val isExternalAction = activity?.intent?.action == Intent.ACTION_VIEW || activity?.intent?.action == Intent.ACTION_EDIT
+        if (isOpenedFromExternalIntent || isExternalIntent || isExternalAction) {
+            activity?.finish()
         } else {
             if (!navController.popBackStack()) {
-                (context as? Activity)?.finish()
+                activity?.finish()
             }
         }
     }

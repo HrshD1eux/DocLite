@@ -36,11 +36,19 @@ You may redistribute copies of the source code or modifications thereof, provide
   c. Any derivative work must be licensed under these same terms.
 
 4. THIRD-PARTY COMPONENTS & COMPATIBILITY:
-DocLite utilizes certain open-source software libraries licensed under the Apache 
-License, Version 2.0, the MIT License, and the BSD License (including Apache POI, 
-PDFBox-Android, OpenCSV, and AndroidX). Each third-party component remains subject 
-to its respective upstream license terms. Nothing in this License alters or impairs 
-your rights under those upstream open-source licenses.
+DocLite utilizes open-source software libraries licensed under the Apache License, 
+Version 2.0 and the MIT License, including:
+  - Apache POI (Core, OOXML & Scratchpad) (Apache 2.0)
+  - PDFBox-Android (Apache 2.0)
+  - OpenCSV (Apache 2.0)
+  - FasterXML Aalto XML & StAX API (Apache 2.0)
+  - Coil Image Loading (Apache 2.0)
+  - Android Jetpack & Compose (Apache 2.0)
+  - AndroidX Room & DataStore (Apache 2.0)
+  - Kotlin & KotlinX Coroutines (Apache 2.0)
+  - Robolectric & Roborazzi (MIT / Apache 2.0)
+Each third-party component remains subject to its respective upstream license terms. 
+Nothing in this License alters or impairs your rights under those upstream open-source licenses.
 
 5. DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY:
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 

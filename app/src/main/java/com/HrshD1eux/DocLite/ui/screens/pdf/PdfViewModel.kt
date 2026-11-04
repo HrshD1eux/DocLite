@@ -143,6 +143,10 @@ class PdfViewModel(
         }
     }
 
+    suspend fun getPageText(pageIndex: Int): String {
+        return documentRepository.pdfEngine.getPageText(pageIndex)
+    }
+
     fun goToPage(pageIndex: Int) {
         val currentState = _uiState.value as? PdfUiState.Success ?: return
         if (pageIndex in 0 until currentState.pageCount) {

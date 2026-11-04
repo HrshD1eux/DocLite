@@ -53,6 +53,16 @@ import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Highlight
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.TextFields
+import android.content.ClipboardManager
+import android.content.ClipData
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
@@ -143,6 +153,19 @@ fun PdfAnnotatorScreen(
 
     // Lazy list and current page detection
     val listState = rememberLazyListState()
+    var textInspectionPageIndex by remember { mutableStateOf<Int?>(null) }
+    var inspectingPageText by remember { mutableStateOf<String?>(null) }
+    var isLoadingPageText by remember { mutableStateOf(false) }
+
+    val openTextInspection: (Int) -> Unit = { pageIndex ->
+        textInspectionPageIndex = pageIndex
+        isLoadingPageText = true
+        inspectingPageText = null
+        scope.launch {
+            inspectingPageText = viewModel.getPageText(pageIndex)
+            isLoadingPageText = false
+        }
+    }
     val visiblePageIndex by remember {
         derivedStateOf { listState.firstVisibleItemIndex }
     }
@@ -508,6 +531,27 @@ fun PdfAnnotatorScreen(
                                     val containerWidth = maxWidth
                                     val containerHeight = maxHeight
 
+                                    // Floating Select Text badge on top right of page
+                                    if (!uiState.isAnnotationMode) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(6.dp)
+                                                .clickable { openTextInspection(pageIndex) }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Default.TextFields, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text("Text", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                    }
+
                                     if (bmp != null) {
                                         // Remember ImageBitmap to prevent continuous object allocations
                                         val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
@@ -845,6 +889,14 @@ fun PdfAnnotatorScreen(
                                 }
                             },
                             actions = {
+                                // Select & Copy Original Vector Text
+                                IconButton(onClick = {
+                                    val currentVisiblePage = listState.firstVisibleItemIndex.coerceIn(0, (uiState.pageCount - 1).coerceAtLeast(0))
+                                    openTextInspection(currentVisiblePage)
+                                }) {
+                                    Icon(Icons.Default.TextFields, contentDescription = "Select & Copy Page Text")
+                                }
+
                                 // Search
                                 IconButton(onClick = { viewModel.toggleSearch(true) }) {
                                     Icon(Icons.Default.Search, contentDescription = "Search document")

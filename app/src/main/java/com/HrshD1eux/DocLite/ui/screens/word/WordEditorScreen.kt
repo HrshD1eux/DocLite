@@ -510,17 +510,17 @@ fun WordEditorScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .then(if (a4PrintMode) Modifier.defaultMinSize(minHeight = 540.dp) else Modifier),
-                                    shape = RoundedCornerShape(2.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = if (a4PrintMode) 4.dp else 1.dp),
-                                    border = BorderStroke(0.5.dp, Color(0xFFD0D7DE))
+                                    shape = if (a4PrintMode) RoundedCornerShape(2.dp) else RoundedCornerShape(0.dp),
+                                    colors = CardDefaults.cardColors(containerColor = if (a4PrintMode) Color.White else Color.Transparent),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = if (a4PrintMode) 4.dp else 0.dp),
+                                    border = if (a4PrintMode) BorderStroke(0.5.dp, Color(0xFFD0D7DE)) else null
                                 ) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
-                                                horizontal = if (a4PrintMode) 10.dp else 10.dp,
-                                                vertical = if (a4PrintMode) 18.dp else 14.dp
+                                                horizontal = if (a4PrintMode) 10.dp else 4.dp,
+                                                vertical = if (a4PrintMode) 18.dp else 6.dp
                                             )
                                     ) {
 
@@ -1177,7 +1177,12 @@ private fun ViewModeParagraph(paragraph: Paragraph) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                vertical = when {
+                top = paragraph.spacingBeforeDp?.dp ?: when {
+                    paragraph.isHeader -> 6.dp
+                    isBlankPara -> 2.dp
+                    else -> 1.5.dp
+                },
+                bottom = paragraph.spacingAfterDp?.dp ?: when {
                     paragraph.isHeader -> 6.dp
                     isBlankPara -> 2.dp
                     else -> 1.5.dp
@@ -1217,11 +1222,11 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
         when {
             numCols == 5 -> {
                 when (cIdx) {
-                    0 -> 0.95f // S.No. (fits on 1 line without wrapping)
-                    1 -> 3.75f // Practical Title (wide, wraps cleanly)
-                    2 -> 1.45f // Date (fits "11/08/2026" or "11/08/26" on 1 line)
-                    3 -> 1.15f // Page No. (fits "Page No." and "37-38")
-                    4 -> 1.45f // Teacher's Sign (fits comfortably on mobile)
+                    0 -> 0.7f  // S.No.
+                    1 -> 5.5f  // Practical Title (over 55% of width, avoiding wrapping)
+                    2 -> 1.25f // Date
+                    3 -> 0.95f // Page No.
+                    4 -> 1.25f // Teacher's Sign
                     else -> 1.0f
                 }
             }
@@ -1572,7 +1577,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 230 // Calibrated to Word's authentic A4/Letter page height (52 pages for DSA manual)
+    val maxWeightPerPage = 210 // Calibrated to Word's authentic A4/Letter page height (52 pages for DSA manual)
 
     for (elemIndex in bodyElements.indices) {
         val element = bodyElements[elemIndex]
@@ -1586,6 +1591,15 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
                 accumulatedWeight = 0
             }
             continue
+        }
+
+        // Table with hasPageBreakBefore
+        if (element is WordBodyElement.TableElement && element.table.hasPageBreakBefore) {
+            if (currentElements.isNotEmpty()) {
+                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+                currentElements.clear()
+                accumulatedWeight = 0
+            }
         }
 
         // Paragraph with hasPageBreakBefore
@@ -1613,11 +1627,10 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
                 }
             }
             is WordBodyElement.TableElement -> {
-                if (!element.table.hasBorders) {
-                    (element.table.rows.size * 18).coerceIn(40, 90)
-                } else {
-                    (element.table.rows.size * 20).coerceAtLeast(35)
+                val totalLines = element.table.rows.sumOf { r ->
+                    r.cells.maxOfOrNull { it.text.lines().size } ?: 1
                 }
+                (totalLines * 16).coerceAtLeast(35)
             }
             is WordBodyElement.ImageElement -> 130
             is WordBodyElement.PageBreakElement -> 0

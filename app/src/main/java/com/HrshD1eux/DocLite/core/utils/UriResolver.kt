@@ -105,6 +105,49 @@ object UriResolver {
     }
 
     /**
+     * Resolves an incoming URI. If it is an external content:// URI (e.g. from WhatsApp or FileProvider),
+     * immediately caches it to local storage to prevent SecurityException (Permission Denial)
+     * when accessed asynchronously or across activity lifecycle events.
+     */
+    fun resolveOrCacheIncomingUri(context: Context, uri: Uri): Uri {
+        try {
+            if (uri.scheme == "file") {
+                val f = File(uri.path ?: "")
+                if (f.exists() && f.canRead()) return uri
+            }
+
+            // 1. Check if direct physical file is accessible on storage
+            val physicalFile = resolvePhysicalFile(context, uri)
+            if (physicalFile != null && physicalFile.exists() && physicalFile.canRead()) {
+                return Uri.fromFile(physicalFile)
+            }
+
+            // 2. If content URI, copy immediately to local cache
+            if (uri.scheme == "content") {
+                val displayName = getDisplayName(context, uri, "document")
+                val safeName = displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                val cacheDir = File(context.cacheDir, "opened_external_files").apply { mkdirs() }
+                val cachedFile = File(cacheDir, "${System.currentTimeMillis()}_$safeName")
+
+                val stream = context.contentResolver.openInputStream(uri)
+                if (stream != null) {
+                    stream.use { input ->
+                        cachedFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (cachedFile.exists() && cachedFile.length() > 0L) {
+                        return Uri.fromFile(cachedFile)
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "resolveOrCacheIncomingUri failed for $uri, falling back to permanent URI", t)
+        }
+        return getCanonicalPermanentUri(context, uri)
+    }
+
+    /**
      * Opens an InputStream with automatic fallback from ContentResolver to direct physical file.
      * Prevents Permission Denial crashes on FileProvider and external content URIs.
      */

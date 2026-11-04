@@ -550,13 +550,15 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         val licenses = listOf(
-                            Triple("Apache POI", "v4.1.2 • Apache License 2.0", "Copyright (c) 2001-2020 The Apache Software Foundation\nhttps://poi.apache.org"),
+                            Triple("Apache POI (Core, OOXML & Scratchpad)", "v4.1.2 • Apache License 2.0", "Copyright (c) 2001-2020 The Apache Software Foundation\nhttps://poi.apache.org"),
                             Triple("PDFBox-Android", "v2.0.27.0 • Apache License 2.0", "Copyright (c) 2014-2023 Tom Roush\nCopyright (c) 2002-2023 The Apache Software Foundation\nhttps://github.com/TomRoush/PdfBox-Android"),
                             Triple("OpenCSV", "v5.9 • Apache License 2.0", "Copyright (c) 2005-2024 Bytecode Pty Ltd, Glen Smith, Mike Czapik\nhttps://opencsv.sourceforge.net"),
-                            Triple("Aalto XML & StAX API", "v1.3.3 • Apache License 2.0", "Copyright (c) FasterXML, LLC\nhttps://github.com/FasterXML/aalto-xml"),
+                            Triple("FasterXML Aalto XML & StAX API", "v1.3.3 • Apache License 2.0", "Copyright (c) FasterXML, LLC\nhttps://github.com/FasterXML/aalto-xml"),
                             Triple("Coil Image Loading", "v2.7.0 • Apache License 2.0", "Copyright (c) 2024 Coil Contributors\nhttps://github.com/coil-kt/coil"),
-                            Triple("Android Jetpack & Compose", "Apache License 2.0", "Copyright (c) The Android Open Source Project\nhttps://android.googlesource.com"),
-                            Triple("Kotlin & Coroutines", "Apache License 2.0", "Copyright (c) 2010-2025 JetBrains s.r.o.\nhttps://github.com/Kotlin/kotlinx.coroutines")
+                            Triple("Android Jetpack & Compose (BOM 2024.11.00)", "Apache License 2.0", "Copyright (c) The Android Open Source Project\nhttps://android.googlesource.com"),
+                            Triple("AndroidX Room & DataStore", "v2.7.0 / v1.1.1 • Apache License 2.0", "Copyright (c) The Android Open Source Project\nhttps://developer.android.com/jetpack/androidx"),
+                            Triple("Kotlin & KotlinX Coroutines", "v2.0.21 / v1.9.0 • Apache License 2.0", "Copyright (c) 2010-2025 JetBrains s.r.o.\nhttps://github.com/Kotlin/kotlinx.coroutines"),
+                            Triple("Robolectric & Roborazzi", "MIT / Apache License 2.0", "Copyright (c) Robolectric Contributors & takahirom\nhttps://github.com/robolectric/robolectric")
                         )
 
                         licenses.forEach { (name, lic, note) ->

@@ -67,12 +67,14 @@ Analyze financial statements on your phone with zero data leaving your device:
 ## 🛠️ Technology Stack
 
 * **Language**: Kotlin 2.0+
-* **UI**: Jetpack Compose with Material Design 3
-* **Concurrency**: Coroutines & StateFlow
-* **Database**: Room 2.7.0 (with password-protection metadata, recent and favorite files)
-* **Engines**:
-  * [Apache POI](https://poi.apache.org/) - Office Open XML document processing
-  * [PDFBox-Android](https://github.com/TomRoush/PdfBox-Android) - Password-protected PDF text extraction
+* **UI**: Jetpack Compose with Material Design 3 (BOM 2024.11.00)
+* **Concurrency**: KotlinX Coroutines & StateFlow
+* **Database**: Room 2.7.0 & DataStore Preferences (offline metadata, passwords, and favorites)
+* **Image Loading**: Coil 2.7.0
+* **Engines & Parsers**:
+  * [Apache POI](https://poi.apache.org/) (Core, OOXML, Scratchpad) - Word, Excel, and PowerPoint document processing
+  * [PDFBox-Android](https://github.com/TomRoush/PdfBox-Android) - Password-protected PDF decryption and vector text extraction
+  * [FasterXML Aalto XML & StAX](https://github.com/FasterXML/aalto-xml) - High-speed streaming XML parsing
   * [OpenCSV](https://opencsv.sourceforge.net/) - High-speed CSV parsing
   * Android Native `PdfRenderer` - Hardware-accelerated PDF rendering
 

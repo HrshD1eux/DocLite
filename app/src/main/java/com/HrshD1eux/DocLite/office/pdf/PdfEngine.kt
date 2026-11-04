@@ -252,6 +252,40 @@ class PdfEngine(private val context: Context) {
         }
     }
 
+    suspend fun getPageText(pageIndex: Int): String = withContext(Dispatchers.IO) {
+        synchronized(renderLock) {
+            pageTextCache[pageIndex]?.let { return@synchronized it }
+        }
+        val uri = currentUri ?: return@withContext ""
+        try {
+            val doc = if (!currentPassword.isNullOrEmpty()) {
+                openInputStreamSafe(uri)?.use { stream ->
+                    PDDocument.load(stream, currentPassword)
+                }
+            } else {
+                openInputStreamSafe(uri)?.use { stream ->
+                    PDDocument.load(stream)
+                }
+            } ?: return@withContext ""
+
+            doc.use { document ->
+                if (pageIndex in 0 until document.numberOfPages) {
+                    val stripper = PDFTextStripper()
+                    stripper.startPage = pageIndex + 1
+                    stripper.endPage = pageIndex + 1
+                    val text = stripper.getText(document)?.trim() ?: ""
+                    synchronized(renderLock) {
+                        pageTextCache[pageIndex] = text
+                    }
+                    return@withContext text
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        ""
+    }
+
     suspend fun searchInPdf(query: String): List<PdfSearchResult> = withContext(Dispatchers.IO) {
         val results = mutableListOf<PdfSearchResult>()
         if (query.isBlank() || currentUri == null) return@withContext results

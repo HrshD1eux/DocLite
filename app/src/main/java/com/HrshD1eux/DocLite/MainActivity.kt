@@ -25,7 +25,7 @@ import android.util.Log
 class MainActivity : ComponentActivity() {
 
     private val _intentDataFlow = MutableStateFlow<Pair<Uri?, DocumentFormat?>>(Pair(null, null))
-    private var isExternalIntent = false
+    private val _isExternalIntent = MutableStateFlow(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
                 initialValue = com.HrshD1eux.DocLite.models.AppSettings()
             )
             val intentData by _intentDataFlow.collectAsStateWithLifecycle()
+            val isExternal by _isExternalIntent.collectAsStateWithLifecycle()
 
             DocLiteTheme(themeMode = settings.themeMode) {
                 Surface(
@@ -50,7 +51,7 @@ class MainActivity : ComponentActivity() {
                     DocLiteNavigation(
                         initialIntentUri = intentData.first,
                         initialIntentFormat = intentData.second,
-                        isExternalIntent = isExternalIntent,
+                        isExternalIntent = isExternal,
                         startScreen = settings.startScreen,
                         onIntentConsumed = {
                             _intentDataFlow.value = Pair(null, null)
@@ -71,7 +72,7 @@ class MainActivity : ComponentActivity() {
         val hasData = incomingIntent?.data != null
         val isSupportedAction = incomingIntent?.action == Intent.ACTION_VIEW || incomingIntent?.action == Intent.ACTION_EDIT
         if (isSupportedAction && hasData) {
-            isExternalIntent = true
+            _isExternalIntent.value = true
             val rawUri = incomingIntent!!.data!!
             try {
                 if (rawUri.scheme == "content") {
@@ -84,8 +85,8 @@ class MainActivity : ComponentActivity() {
                 Log.w("MainActivity", "Could not take persistable permission for $rawUri", e)
             }
 
-            // Canonicalize to direct physical URI if accessible on storage, preventing FileProvider permission expirations
-            val effectiveUri = UriResolver.getCanonicalPermanentUri(this, rawUri)
+            // Immediately cache external content URIs locally to avoid FileProvider permission expiration (WhatsApp, File Manager)
+            val effectiveUri = UriResolver.resolveOrCacheIncomingUri(this, rawUri)
             val displayName = UriResolver.getDisplayName(this, effectiveUri)
             val extFromName = displayName.substringAfterLast('.', "").lowercase()
             val mimeType = try { contentResolver.getType(rawUri) } catch (t: Throwable) { null }

@@ -4,6 +4,9 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -305,6 +308,7 @@ private fun IdleUploadState(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -400,212 +404,210 @@ private fun AnalysisResultView(
         else result.topCreditSenders.filter { it.partyName.contains(state.searchQuery, ignoreCase = true) }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Summary Banner Cards
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = result.fileName,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1
-                        )
-                        Text(
-                            text = "Total Transactions: ${result.totalTransactionCount} (${result.totalCreditCount} Cr, ${result.totalDebitCount} Dr)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Offline analytics for personal informational reference only. Always verify with official bank statements.",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.outline
-                        )
+    val activeParties = if (state.activeTab == 0) filteredRecipients else filteredSenders
+    val isCreditTab = state.activeTab == 1
+    val sectionTitle = if (state.activeTab == 0) "Top 60 Debit Recipients (Highest Sent)" else "Top 60 Credit Senders (Highest Received)"
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // 1. Summary Banner Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = result.fileName,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Total Transactions: ${result.totalTransactionCount} (${result.totalCreditCount} Cr, ${result.totalDebitCount} Dr)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Offline analytics for personal informational reference only. Always verify with official bank statements.",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+
+                        TextButton(onClick = onSelectNewFile) {
+                            Text("Change File")
+                        }
                     }
 
-                    TextButton(onClick = onSelectNewFile) {
-                        Text("Change File")
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val isWide = maxWidth >= 380.dp
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(if (!isWide) Modifier.horizontalScroll(rememberScrollState()) else Modifier),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Credit Card
+                            Card(
+                                modifier = if (isWide) Modifier.weight(1f) else Modifier.width(130.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Total Credit", style = MaterialTheme.typography.labelMedium, color = Color(0xFF2E7D32))
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = formatCurrency(result.totalCreditAmount),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                                        color = Color(0xFF1B5E20),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Debit Card
+                            Card(
+                                modifier = if (isWide) Modifier.weight(1f) else Modifier.width(130.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Total Debit", style = MaterialTheme.typography.labelMedium, color = Color(0xFFC62828))
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = formatCurrency(result.totalDebitAmount),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                                        color = Color(0xFFB71C1C),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Net Difference
+                            Card(
+                                modifier = if (isWide) Modifier.weight(1f) else Modifier.width(130.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("Net Difference", style = MaterialTheme.typography.labelMedium, color = Color(0xFF1565C0))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = formatCurrency(result.netBalance),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                                        color = if (result.netBalance >= 0) Color(0xFF1565C0) else Color(0xFFC62828),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(12.dp))
+        // 2. Search Bar
+        item {
+            OutlinedTextField(
+                value = state.searchQuery,
+                onValueChange = onSearchChange,
+                placeholder = { Text("Search account / party name...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                trailingIcon = {
+                    if (state.searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchChange("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .testTag("party_search_bar")
+            )
+        }
 
-                Row(
+        // 3. Tabs
+        item {
+            TabRow(
+                selectedTabIndex = state.activeTab,
+                containerColor = Color.Transparent,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            ) {
+                Tab(
+                    selected = state.activeTab == 0,
+                    onClick = { onTabChange(0) },
+                    text = { Text("Top Debits (60)") }
+                )
+                Tab(
+                    selected = state.activeTab == 1,
+                    onClick = { onTabChange(1) },
+                    text = { Text("Top Credits (60)") }
+                )
+            }
+        }
+
+        // 4. Section Title
+        item {
+            Text(
+                text = sectionTitle,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
+        // 5. Party Items or Empty State
+        if (activeParties.isEmpty()) {
+            item {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Credit Card
-                    Card(
-                        modifier = Modifier.width(140.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Total Credit", style = MaterialTheme.typography.labelMedium, color = Color(0xFF2E7D32))
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = formatCurrency(result.totalCreditAmount),
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = Color(0xFF1B5E20)
-                            )
-                        }
-                    }
-
-                    // Debit Card
-                    Card(
-                        modifier = Modifier.width(140.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Total Debit", style = MaterialTheme.typography.labelMedium, color = Color(0xFFC62828))
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = formatCurrency(result.totalDebitAmount),
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = Color(0xFFB71C1C)
-                            )
-                        }
-                    }
-
-                    // Net Difference
-                    Card(
-                        modifier = Modifier.width(140.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Net Difference", style = MaterialTheme.typography.labelMedium, color = Color(0xFF1565C0))
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = formatCurrency(result.netBalance),
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = if (result.netBalance >= 0) Color(0xFF1565C0) else Color(0xFFC62828)
-                            )
-                        }
-                    }
+                    Text(
+                        text = "No matching accounts found.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-        }
-
-        // Search Bar
-        OutlinedTextField(
-            value = state.searchQuery,
-            onValueChange = onSearchChange,
-            placeholder = { Text("Search account / party name...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-            trailingIcon = {
-                if (state.searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchChange("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear")
-                    }
-                }
-            },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-                .testTag("party_search_bar")
-        )
-
-        // Tabs: 0: Overview, 1: Top Debit Recipients (Top 60), 2: Top Credit Senders (Top 60)
-        TabRow(
-            selectedTabIndex = state.activeTab,
-            containerColor = Color.Transparent,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-        ) {
-            Tab(
-                selected = state.activeTab == 0,
-                onClick = { onTabChange(0) },
-                text = { Text("Top Debits (60)") }
-            )
-            Tab(
-                selected = state.activeTab == 1,
-                onClick = { onTabChange(1) },
-                text = { Text("Top Credits (60)") }
-            )
-        }
-
-        // Tab Contents
-        Box(modifier = Modifier.weight(1f)) {
-            when (state.activeTab) {
-                0 -> PartyListSection(
-                    title = "Top 60 Debit Recipients (Highest Sent)",
-                    parties = filteredRecipients,
-                    isCredit = false
-                )
-                1 -> PartyListSection(
-                    title = "Top 60 Credit Senders (Highest Received)",
-                    parties = filteredSenders,
-                    isCredit = true
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PartyListSection(
-    title: String,
-    parties: List<PartySummary>,
-    isCredit: Boolean
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        if (parties.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No matching accounts found.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         } else {
-            LazyColumn(
-                contentPadding = PaddingValues(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                itemsIndexed(parties, key = { index, item -> "${item.partyName}_$index" }) { index, party ->
+            itemsIndexed(activeParties, key = { index, item -> "${item.partyName}_$index" }) { index, party ->
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                     PartyItemCard(
                         rank = index + 1,
                         party = party,
-                        isCredit = isCredit
+                        isCredit = isCreditTab
                     )
                 }
             }
@@ -652,11 +654,12 @@ private fun PartyItemCard(
             Spacer(modifier = Modifier.width(12.dp))
 
             // Party Name and count
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                 Text(
                     text = party.partyName,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    maxLines = 2
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "${party.transactionCount} transaction${if (party.transactionCount > 1) "s" else ""}",

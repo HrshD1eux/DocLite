@@ -63,6 +63,7 @@ data class WordTable(
     val id: String = java.util.UUID.randomUUID().toString(),
     val rows: List<WordTableRow> = emptyList(),
     val hasBorders: Boolean = true,
+    val hasPageBreakBefore: Boolean = false,
     val rawXml: String? = null
 )
 
@@ -100,6 +101,8 @@ data class Paragraph(
     val headerLevel: Int = 0,
     val bulletPrefix: String? = null,
     val hasPageBreakBefore: Boolean = false,
+    val spacingBeforeDp: Float? = null,
+    val spacingAfterDp: Float? = null,
     val rawXml: String? = null
 ) {
     fun getPlainText(): String {

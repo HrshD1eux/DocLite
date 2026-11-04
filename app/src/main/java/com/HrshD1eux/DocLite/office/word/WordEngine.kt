@@ -621,6 +621,9 @@ class WordEngine(private val context: Context) {
         var insideTblBorders = false
         var nilBorderCount = 0
         var totalBorderCount = 0
+        var tableHasPageBreakBefore = false
+        var pSpacingBeforeDp: Float? = null
+        var pSpacingAfterDp: Float? = null
         var currentRowIsHeader = false
         val currentTableRows = mutableListOf<WordTableRow>()
         val currentCells = mutableListOf<WordTableCell>()
@@ -733,6 +736,8 @@ class WordEngine(private val context: Context) {
                             bulletPrefix = null
                             hasPageBreakBefore = false
                             isStandalonePageBreak = false
+                            pSpacingBeforeDp = null
+                            pSpacingAfterDp = null
                             currentRuns.clear()
 
                             insidePPr = false
@@ -748,6 +753,14 @@ class WordEngine(private val context: Context) {
                         "pageBreakBefore" -> {
                             if (insidePPr) {
                                 hasPageBreakBefore = true
+                            }
+                        }
+                        "spacing" -> {
+                            if (insidePPr) {
+                                val beforeTwips = parser.getAttributeValue(null, "before")?.toIntOrNull()
+                                val afterTwips = parser.getAttributeValue(null, "after")?.toIntOrNull()
+                                if (beforeTwips != null) pSpacingBeforeDp = (beforeTwips / 20f).coerceIn(0f, 48f)
+                                if (afterTwips != null) pSpacingAfterDp = (afterTwips / 20f).coerceIn(0f, 48f)
                             }
                         }
                         "jc" -> {
@@ -906,6 +919,9 @@ class WordEngine(private val context: Context) {
                             }
                         }
                         "lastRenderedPageBreak" -> {
+                            if (insideTable && currentTableRows.size <= 1) {
+                                tableHasPageBreakBefore = true
+                            }
                             if (insideParagraph) {
                                 val prevIsBreak = bodyElements.lastOrNull() is WordBodyElement.PageBreakElement
                                 if (!prevIsBreak && !hasPageBreakBefore) {
@@ -1091,6 +1107,8 @@ class WordEngine(private val context: Context) {
                                         headerLevel = headerLevel,
                                         bulletPrefix = bulletPrefix,
                                         hasPageBreakBefore = if (prevIsBreak) false else hasPageBreakBefore,
+                                        spacingBeforeDp = pSpacingBeforeDp,
+                                        spacingAfterDp = pSpacingAfterDp,
                                         rawXml = rawXml
                                     )
                                     bodyElements.add(WordBodyElement.ParagraphElement(paragraph))
@@ -1131,10 +1149,12 @@ class WordEngine(private val context: Context) {
                                 bodyElements.add(WordBodyElement.TableElement(WordTable(
                                     rows = currentTableRows.toList(),
                                     hasBorders = currentTableHasBorders,
+                                    hasPageBreakBefore = tableHasPageBreakBefore,
                                     rawXml = rawXml
                                 )))
                             }
                             insideTable = false
+                            tableHasPageBreakBefore = false
                         }
                     }
                 }
