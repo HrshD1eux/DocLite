@@ -1329,4 +1329,38 @@ class OfficeEngineIntegrationTest {
         assertEquals("Updated Content", testFile.readText())
         testFile.delete()
     }
+
+    @Test
+    fun testUserUploadedDocxPaginationAndStyling() {
+        val userDocx = File("C:/Users/Harsh/.gemini/antigravity/brain/003dbbee-e160-422b-bde0-115677d01a09/.user_uploaded/media_1793865614482_fe123b18.docx")
+        if (!userDocx.exists()) {
+            println("User docx not found, skipping")
+            return
+        }
+
+        val loadedDoc = kotlinx.coroutines.runBlocking { wordEngine.loadDocument(Uri.fromFile(userDocx)) }
+        println("Loaded doc elements: ${loadedDoc.bodyElements.size}")
+        
+        // Inspect Table 8 (the cover table)
+        val tables = loadedDoc.bodyElements.filterIsInstance<WordBodyElement.TableElement>()
+        println("Total tables: ${tables.size}")
+        val pages = com.HrshD1eux.DocLite.ui.screens.word.paginateDocumentElements(loadedDoc.bodyElements)
+        println("Paginated pages count: ${pages.size}")
+        assertEquals(52, pages.size)
+        assertEquals(false, tables[0].table.hasBorders)
+        assertEquals(null, tables[0].table.rows[0].cells[0].backgroundColorHex)
+        assertEquals(true, tables[1].table.hasBorders)
+        assertEquals("#1F497D", tables[1].table.rows[0].cells[0].backgroundColorHex)
+        assertEquals(21, tables[1].table.rows.size)
+        pages.forEachIndexed { idx, page ->
+            val firstElem = page.elements.firstOrNull()?.element
+            val summary = when (firstElem) {
+                is WordBodyElement.TableElement -> "TABLE: " + firstElem.table.rows.firstOrNull()?.cells?.map { it.text }?.joinToString("|")?.take(40)
+                is WordBodyElement.ParagraphElement -> "PARA: " + firstElem.paragraph.getPlainText().take(40)
+                is WordBodyElement.ImageElement -> "IMAGE"
+                else -> "BREAK"
+            }
+            println("  Page ${idx + 1}: ${page.elements.size} elements, starts with $summary")
+        }
+    }
 }

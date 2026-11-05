@@ -672,7 +672,7 @@ class WordEngine(private val context: Context) {
                     when (tag) {
                         "tbl" -> {
                             insideTable = true
-                            currentTableHasBorders = true  // default true for standard Word tables; set false when all borders are nil
+                            currentTableHasBorders = false  // default false for layout tables; set true when tblBorders or bordered style found
                             insideTblBorders = false
                             nilBorderCount = 0
                             totalBorderCount = 0
@@ -930,30 +930,7 @@ class WordEngine(private val context: Context) {
                             }
                         }
                         "lastRenderedPageBreak" -> {
-                            if (insideTable && currentTableRows.size <= 1) {
-                                tableHasPageBreakBefore = true
-                            }
-                            if (insideParagraph) {
-                                val prevIsBreak = bodyElements.lastOrNull() is WordBodyElement.PageBreakElement
-                                if (!prevIsBreak && !hasPageBreakBefore) {
-                                    if (currentRuns.isEmpty() || currentRuns.all { it.text.isBlank() }) {
-                                        hasPageBreakBefore = true
-                                    } else {
-                                        val runsBefore = currentRuns.toList()
-                                        currentRuns.clear()
-                                        val prevParagraph = Paragraph(
-                                            runs = runsBefore,
-                                            alignment = paraAlignment,
-                                            isHeader = isHeader,
-                                            headerLevel = headerLevel,
-                                            bulletPrefix = bulletPrefix
-                                        )
-                                        bodyElements.add(WordBodyElement.ParagraphElement(prevParagraph))
-                                        pageNumberCounter++
-                                        bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
-                                    }
-                                }
-                            }
+                            // Advisory cache hint from Word desktop; ignored to prevent phantom page breaks
                         }
                         "t" -> {
                             insideTextTag = true

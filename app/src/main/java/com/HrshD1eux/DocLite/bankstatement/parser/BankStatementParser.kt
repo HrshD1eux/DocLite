@@ -589,35 +589,49 @@ class BankStatementParser(private val context: Context) {
     internal fun extractPartyName(narration: String): String {
         var clean = narration.trim()
 
+        val skipTokens = setOf(
+            "UPI", "IMPS", "NEFT", "RTGS", "CR", "DR", "PAY", "P2A", "P2M",
+            "BIL", "ONL", "INB", "REV", "NACH", "ACH", "CMS", "INF", "VPA",
+            "MOB", "WDR", "DEP", "POS", "ATM", "ECS", "TRANSFER", "PAYMENT",
+            "OKAXIS", "OKHDFCBANK", "OKSBI", "OKICICI", "PAYTM", "YBL"
+        )
+
+        val ifscRegex = Regex("^[A-Z]{4}0[A-Z0-9]{6}$", RegexOption.IGNORE_CASE)
+        val numericRefRegex = Regex("^.*\\d.*$")
+
         if (clean.contains("/")) {
             val parts = clean.split("/").map { it.trim() }.filter { it.isNotBlank() }
-            val namePart = parts.firstOrNull { part ->
-                part.length >= 3 &&
-                !part.all { it.isDigit() } &&
-                !part.equals("UPI", ignoreCase = true) &&
-                !part.equals("IMPS", ignoreCase = true) &&
-                !part.equals("NEFT", ignoreCase = true) &&
-                !part.equals("RTGS", ignoreCase = true) &&
-                !part.equals("CR", ignoreCase = true) &&
-                !part.equals("DR", ignoreCase = true) &&
-                !part.equals("PAY", ignoreCase = true) &&
-                !part.matches(Regex("^[0-9A-Z]{8,}$"))
+            val candidate = parts.firstOrNull { part ->
+                val upper = part.uppercase()
+                val isSkip = skipTokens.contains(upper) ||
+                    ifscRegex.matches(upper) ||
+                    (upper.length >= 8 && numericRefRegex.matches(upper) && !upper.contains(" ")) ||
+                    part.all { it.isDigit() }
+                !isSkip && part.length >= 2
             }
-            if (namePart != null) {
-                clean = namePart
+            if (candidate != null) {
+                clean = if (candidate.contains("@")) candidate.substringBefore("@").trim() else candidate
             }
         } else if (clean.contains("-")) {
             val parts = clean.split("-").map { it.trim() }.filter { it.isNotBlank() }
-            val namePart = parts.lastOrNull { part ->
-                !part.all { it.isDigit() } && part.length >= 3
-            }
-            if (namePart != null) {
-                clean = namePart
+            val candidate = parts.firstOrNull { part ->
+                val upper = part.uppercase()
+                val isSkip = skipTokens.contains(upper) ||
+                    ifscRegex.matches(upper) ||
+                    (upper.length >= 8 && numericRefRegex.matches(upper) && !upper.contains(" ")) ||
+                    part.all { it.isDigit() }
+                !isSkip && part.length >= 2
+            } ?: parts.lastOrNull { !it.all { c -> c.isDigit() } && it.length >= 2 }
+            if (candidate != null) {
+                clean = if (candidate.contains("@")) candidate.substringBefore("@").trim() else candidate
             }
         }
 
         clean = clean.replace(Regex("\\b[0-9]{8,}\\b"), "")
             .replace(Regex("\\b(BY|TO|NEFT|IMPS|UPI|RTGS|TRANSFER|INF|POS|ATM|WDR)\\b", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\b[A-Z]{4}0[A-Z0-9]{6}\\b", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("[0-9]{4}X{4,}[0-9]{4}"), "")
+            .trim(' ', '/', '-', ':', '.')
             .trim()
 
         if (clean.isBlank()) clean = narration.take(30)

@@ -407,7 +407,7 @@ private fun AnalysisResultView(
 
     val activeParties = if (state.activeTab == 0) filteredRecipients else filteredSenders
     val isCreditTab = state.activeTab == 1
-    val sectionTitle = if (state.activeTab == 0) "Top 60 Debit Recipients (Highest Sent)" else "Top 60 Credit Senders (Highest Received)"
+    val sectionTitle = if (state.activeTab == 0) "Top 60 Recipients (To Whom Paid)" else "Top 60 Senders (From Whom Received)"
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -646,12 +646,12 @@ private fun AnalysisResultView(
                 Tab(
                     selected = state.activeTab == 0,
                     onClick = { onTabChange(0) },
-                    text = { Text("Top Debits (60)") }
+                    text = { Text("Paid To (Debits)") }
                 )
                 Tab(
                     selected = state.activeTab == 1,
                     onClick = { onTabChange(1) },
-                    text = { Text("Top Credits (60)") }
+                    text = { Text("Received From (Credits)") }
                 )
             }
         }
@@ -736,6 +736,21 @@ private fun PartyItemCard(
 
             // Party Name and count
             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (isCredit) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                ) {
+                    Text(
+                        text = if (isCredit) "RECEIVED FROM" else "PAID TO",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = if (isCredit) Color(0xFF2E7D32) else Color(0xFFC62828),
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = party.partyName,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),

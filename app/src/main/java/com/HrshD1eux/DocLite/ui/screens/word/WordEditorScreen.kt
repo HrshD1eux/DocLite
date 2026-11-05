@@ -1234,11 +1234,11 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
         when {
             numCols == 5 -> {
                 when (cIdx) {
-                    0 -> 0.8f  // S.No.
-                    1 -> 4.2f  // Practical Title
-                    2 -> 1.7f  // Date (ample space for 11/08/26 without wrapping)
-                    3 -> 1.2f  // Page No. (fits 13-14 on single line)
-                    4 -> 1.1f  // Teacher's Sign
+                    0 -> 0.75f // S.No.
+                    1 -> 4.3f  // Practical Title
+                    2 -> 1.9f  // Date (ample space for 11/08/26 without wrapping)
+                    3 -> 1.1f  // Page No.
+                    4 -> 0.95f // Teacher's Sign
                     else -> 1.0f
                 }
             }
@@ -1311,7 +1311,10 @@ private fun InteractiveTableCard(
 
     val needsHorizontalScroll = !fitToScreen && numCols > 6
     val colWeights = remember(table) {
-        if (table.columnWidthsDxa.isNotEmpty() && table.columnWidthsDxa.size == numCols) {
+        if (numCols == 5) {
+            // Respect responsive column distribution on mobile screen so Date 11/08/26 never wraps
+            computeColumnWeights(table)
+        } else if (table.columnWidthsDxa.isNotEmpty() && table.columnWidthsDxa.size == numCols) {
             val totalDxa = table.columnWidthsDxa.sum().toFloat().coerceAtLeast(1f)
             table.columnWidthsDxa.map { (it.toFloat() / totalDxa) * numCols.toFloat() }
         } else {
@@ -1357,13 +1360,12 @@ private fun InteractiveTableCard(
                             val colWeight = colWeights.getOrElse(cIdx) { 1f }
                             val isHeaderCell = cell.isHeader || (rIdx == 0 && cell.backgroundColorHex != null && !cell.backgroundColorHex.equals("#FFFFFF", ignoreCase = true))
 
-                            // Exact background color from Word XML; only default to navy if explicitly marked as header
+                            // Exact background color from Word XML; transparent if not specified
                             val cellBg = when {
                                 cell.backgroundColorHex != null -> {
                                     try { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }
                                     catch (e: Exception) { Color.Transparent }
                                 }
-                                cell.isHeader -> Color(0xFF1F497D)
                                 else -> Color.Transparent
                             }
 
@@ -1472,13 +1474,16 @@ private fun InteractiveTableCard(
                                         lineHeight = 15.sp
                                     )
                                 } else {
+                                    val isDateCol = numCols == 5 && cIdx == 2
                                     Text(
                                         text = cell.text.ifEmpty { if (isEditing) "—" else "" },
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             fontWeight = cellWeight,
-                                            fontSize = if (isHeaderCell) (cellFontSize.value + 0.5f).sp else cellFontSize,
+                                            fontSize = if (isHeaderCell) (cellFontSize.value + 0.5f).sp else (if (isDateCol) 8.5.sp else cellFontSize),
                                             lineHeight = cellLineHeight
                                         ),
+                                        softWrap = !isDateCol,
+                                        maxLines = if (isDateCol) 1 else Int.MAX_VALUE,
                                         color = if (cell.text.isEmpty() && isEditing) {
                                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                         } else {
@@ -1642,11 +1647,24 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     val currentElements = mutableListOf<IndexedDocElement>()
     var pIndex = 0
     var pageCounter = 1
-    var accumulatedWeight = 0
-    val maxWeightPerPage = 420 // Calibrated to Word's authentic A4 page capacity (52 pages for DSA manual)
 
     var firstHardBreakSeen = false
     var secondHardBreakSeen = false
+
+    fun commitCurrentPageIfMeaningful() {
+        val hasMeaningful = currentElements.any { item ->
+            when (val elem = item.element) {
+                is WordBodyElement.TableElement -> true
+                is WordBodyElement.ImageElement -> true
+                is WordBodyElement.ParagraphElement -> elem.paragraph.getPlainText().isNotBlank()
+                else -> false
+            }
+        }
+        if (hasMeaningful) {
+            pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+        }
+        currentElements.clear()
+    }
 
     for (elemIndex in bodyElements.indices) {
         val element = bodyElements[elemIndex]
@@ -1654,19 +1672,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
 
         // Explicit Page Break element: ends current page and begins next page
         if (element is WordBodyElement.PageBreakElement) {
-            val hasMeaningful = currentElements.any { item ->
-                when (val elem = item.element) {
-                    is WordBodyElement.TableElement -> true
-                    is WordBodyElement.ImageElement -> true
-                    is WordBodyElement.ParagraphElement -> elem.paragraph.getPlainText().isNotBlank()
-                    else -> false
-                }
-            }
-            if (hasMeaningful) {
-                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
-                currentElements.clear()
-                accumulatedWeight = 0
-            }
+            commitCurrentPageIfMeaningful()
             if (!firstHardBreakSeen) firstHardBreakSeen = true
             else if (!secondHardBreakSeen) secondHardBreakSeen = true
             continue
@@ -1684,97 +1690,74 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
             continue
         }
 
-        // Check for Practical Title table or paragraph: starts a new practical page
+        // Section 3: Practicals
         val paraTxt = (element as? WordBodyElement.ParagraphElement)?.paragraph?.getPlainText()?.trim() ?: ""
-        val isPracticalTitle = (element is WordBodyElement.TableElement &&
-            element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.contains("PRACTICAL ", ignoreCase = true) == true) ||
+        val tableFirstText = (element as? WordBodyElement.TableElement)?.table?.rows?.firstOrNull()?.cells?.firstOrNull()?.text?.trim() ?: ""
+        val isCodeBlock = (element as? WordBodyElement.TableElement)?.table?.isCodeBlock == true ||
+            (element is WordBodyElement.TableElement && (tableFirstText.contains("#include") || tableFirstText.contains("int main") || tableFirstText.contains("void ")))
+
+        val isPracticalTitle = !isCodeBlock && (
+            (element is WordBodyElement.TableElement && tableFirstText.startsWith("PRACTICAL ", ignoreCase = true)) ||
             (element is WordBodyElement.ParagraphElement && (
                 paraTxt.startsWith("Program ", ignoreCase = true) ||
                 paraTxt.startsWith("Practical ", ignoreCase = true) ||
                 paraTxt.startsWith("PRACTICAL ", ignoreCase = true)
             ))
+        )
 
         if (isPracticalTitle) {
-            if (currentElements.isNotEmpty()) {
-                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
-                currentElements.clear()
-                accumulatedWeight = 0
-            }
+            commitCurrentPageIfMeaningful()
         }
 
         // Table with hasPageBreakBefore
         if (element is WordBodyElement.TableElement && element.table.hasPageBreakBefore) {
-            if (currentElements.isNotEmpty()) {
-                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
-                currentElements.clear()
-                accumulatedWeight = 0
-            }
+            commitCurrentPageIfMeaningful()
         }
 
         // Paragraph with hasPageBreakBefore
         if (element is WordBodyElement.ParagraphElement && element.paragraph.hasPageBreakBefore) {
-            if (currentElements.isNotEmpty()) {
-                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
-                currentElements.clear()
-                accumulatedWeight = 0
+            commitCurrentPageIfMeaningful()
+        }
+
+        // Large Code Block split: if code has >= 73 lines, Word flows it to a separate page so it doesn't cram with Title & Algo!
+        if (isCodeBlock && element is WordBodyElement.TableElement) {
+            val codeLines = element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.lines()?.size ?: 1
+            if (codeLines >= 73) {
+                val hasContentBefore = currentElements.any { item ->
+                    item.element is WordBodyElement.TableElement || (item.element is WordBodyElement.ParagraphElement && item.element.paragraph.getPlainText().isNotBlank())
+                }
+                if (hasContentBefore) {
+                    commitCurrentPageIfMeaningful()
+                }
             }
         }
 
-        // Element weight estimation
-        val elemWeight = when (element) {
-            is WordBodyElement.ParagraphElement -> {
-                val txt = element.paragraph.getPlainText().trim()
-                if (txt.isEmpty()) {
-                    3
-                } else if (txt in listOf("Output:", "AIM / OBJECTIVE:", "ALGORITHM:", "Source Code:", "Program Code:")) {
-                    16
-                } else {
-                    val words = element.paragraph.runs.sumOf { it.text.split("\\s+".toRegex()).count { w -> w.isNotBlank() } }
-                    val lines = element.paragraph.runs.sumOf { it.text.count { c -> c == '\n' } } + 1
-                    (lines * 11) + (words * 0.05f).toInt()
-                }
-            }
-            is WordBodyElement.TableElement -> {
-                if (isPracticalTitle) {
-                    30
-                } else if (element.table.isCodeBlock) {
-                    val lines = element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.lines()?.size ?: 1
-                    (lines * 11).coerceAtLeast(30)
-                } else {
-                    val totalLines = element.table.rows.sumOf { r ->
-                        r.cells.maxOfOrNull { it.text.lines().size } ?: 1
-                    }
-                    maxOf(35, totalLines * 16)
-                }
-            }
-            is WordBodyElement.ImageElement -> 140
-            is WordBodyElement.PageBreakElement -> 0
-        }
-
-        // Break before Output/Image if the current practical page already contains Aim/Code
+        // Break before Output/Image if the current practical page already contains Aim or Code
         val isOutputSection = (element is WordBodyElement.ParagraphElement && element.paragraph.getPlainText().trim().startsWith("Output:", ignoreCase = true)) ||
             (element is WordBodyElement.ImageElement)
-        if (isOutputSection && accumulatedWeight >= 220) {
-            if (currentElements.isNotEmpty()) {
-                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
-                currentElements.clear()
-                accumulatedWeight = 0
+        if (isOutputSection) {
+            val hasCodeOrAim = currentElements.any { item ->
+                when (val e = item.element) {
+                    is WordBodyElement.TableElement -> e.table.isCodeBlock || e.table.rows.size > 0
+                    is WordBodyElement.ParagraphElement -> {
+                        val t = e.paragraph.getPlainText().trim()
+                        t.startsWith("AIM", ignoreCase = true) || t.startsWith("ALGORITHM", ignoreCase = true) || t.startsWith("Step", ignoreCase = true)
+                    }
+                    else -> false
+                }
             }
-        }
-
-        // Heuristic: If capacity reached and current page already has content
-        if (currentElements.isNotEmpty() && (accumulatedWeight + elemWeight > maxWeightPerPage)) {
-            pages.add(DocumentPage(pageCounter++, currentElements.toList()))
-            currentElements.clear()
-            accumulatedWeight = 0
+            if (hasCodeOrAim) {
+                commitCurrentPageIfMeaningful()
+            }
         }
 
         currentElements.add(IndexedDocElement(elemIndex, currentPIndex, element))
-        accumulatedWeight += elemWeight
     }
 
-    if (currentElements.isNotEmpty() || pages.isEmpty()) {
-        pages.add(DocumentPage(pageCounter, currentElements.toList()))
+    commitCurrentPageIfMeaningful()
+
+    if (pages.isEmpty()) {
+        pages.add(DocumentPage(1, currentElements.toList()))
     }
 
     return pages
