@@ -1643,7 +1643,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 205 // Calibrated to Word's authentic A4 page capacity (52 pages for DSA manual)
+    val maxWeightPerPage = 420 // Calibrated to Word's authentic A4 page capacity (52 pages for DSA manual)
 
     var firstHardBreakSeen = false
     var secondHardBreakSeen = false
@@ -1684,11 +1684,17 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
             continue
         }
 
-        // Check for Practical Title table: starts a new practical page
-        val isPracticalTitleTable = element is WordBodyElement.TableElement &&
-            element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.contains("PRACTICAL ", ignoreCase = true) == true
+        // Check for Practical Title table or paragraph: starts a new practical page
+        val paraTxt = (element as? WordBodyElement.ParagraphElement)?.paragraph?.getPlainText()?.trim() ?: ""
+        val isPracticalTitle = (element is WordBodyElement.TableElement &&
+            element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.contains("PRACTICAL ", ignoreCase = true) == true) ||
+            (element is WordBodyElement.ParagraphElement && (
+                paraTxt.startsWith("Program ", ignoreCase = true) ||
+                paraTxt.startsWith("Practical ", ignoreCase = true) ||
+                paraTxt.startsWith("PRACTICAL ", ignoreCase = true)
+            ))
 
-        if (isPracticalTitleTable) {
+        if (isPracticalTitle) {
             if (currentElements.isNotEmpty()) {
                 pages.add(DocumentPage(pageCounter++, currentElements.toList()))
                 currentElements.clear()
@@ -1719,21 +1725,21 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
             is WordBodyElement.ParagraphElement -> {
                 val txt = element.paragraph.getPlainText().trim()
                 if (txt.isEmpty()) {
-                    6
-                } else if (txt in listOf("Output:", "AIM / OBJECTIVE:", "ALGORITHM:", "Source Code:")) {
-                    20
+                    3
+                } else if (txt in listOf("Output:", "AIM / OBJECTIVE:", "ALGORITHM:", "Source Code:", "Program Code:")) {
+                    16
                 } else {
                     val words = element.paragraph.runs.sumOf { it.text.split("\\s+".toRegex()).count { w -> w.isNotBlank() } }
                     val lines = element.paragraph.runs.sumOf { it.text.count { c -> c == '\n' } } + 1
-                    (lines * 14) + (words * 0.12f).toInt()
+                    (lines * 11) + (words * 0.05f).toInt()
                 }
             }
             is WordBodyElement.TableElement -> {
-                if (isPracticalTitleTable) {
-                    40
+                if (isPracticalTitle) {
+                    30
                 } else if (element.table.isCodeBlock) {
                     val lines = element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.lines()?.size ?: 1
-                    (lines * 3.2f).toInt().coerceAtLeast(30)
+                    (lines * 11).coerceAtLeast(30)
                 } else {
                     val totalLines = element.table.rows.sumOf { r ->
                         r.cells.maxOfOrNull { it.text.lines().size } ?: 1
@@ -1748,7 +1754,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
         // Break before Output/Image if the current practical page already contains Aim/Code
         val isOutputSection = (element is WordBodyElement.ParagraphElement && element.paragraph.getPlainText().trim().startsWith("Output:", ignoreCase = true)) ||
             (element is WordBodyElement.ImageElement)
-        if (isOutputSection && accumulatedWeight >= 110) {
+        if (isOutputSection && accumulatedWeight >= 220) {
             if (currentElements.isNotEmpty()) {
                 pages.add(DocumentPage(pageCounter++, currentElements.toList()))
                 currentElements.clear()

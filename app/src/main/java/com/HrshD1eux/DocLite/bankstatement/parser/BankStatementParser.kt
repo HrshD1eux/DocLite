@@ -265,6 +265,7 @@ class BankStatementParser(private val context: Context) {
         var creditColIndex = -1
         var debitColIndex = -1
         var amountColIndex = -1
+        var balanceColIndex = -1
         var typeColIndex = -1
 
         // 1. Detect Header Row in top 50 rows
@@ -276,10 +277,21 @@ class BankStatementParser(private val context: Context) {
             var hasCreditOrDebit = false
 
             row.forEachIndexed { colIdx, text ->
+                // Check if this column is the Balance column first! NEVER match balance as credit/debit!
+                val isBalance = text.contains("balance") || text.contains("closing") || text.contains("running") ||
+                    text.contains("available") || text == "bal" || text.startsWith("bal ") ||
+                    text.endsWith(" bal") || text.contains("bal(") || text.contains("bal (") || text.contains("bal.")
+                if (isBalance) {
+                    balanceColIndex = colIdx
+                    return@forEachIndexed
+                }
+
                 if (text.contains("date") || text == "dt" || text == "txn date" || text == "value date") {
                     dateColIndex = colIdx
                     hasDate = true
+                    return@forEachIndexed
                 }
+
                 val isNarration = text.contains("particular") || text.contains("description") ||
                     text.contains("narration") || text.contains("party") ||
                     text.contains("account") || text.contains("payee") ||
@@ -288,25 +300,44 @@ class BankStatementParser(private val context: Context) {
                 if (isNarration) {
                     partyColIndex = colIdx
                     hasNarration = true
+                    return@forEachIndexed
                 }
-                // Avoid matching "description" as credit because it contains "cr"!
-                if (!isNarration && (text == "credit" || text == "cr" || text == "cr." ||
+
+                val isChqRef = text.contains("chq") || text.contains("cheque") || text.contains("ref") ||
+                    text.contains("utr") || text.contains("txn id") || text.contains("trans id") ||
+                    text.contains("instrument") || text.contains("reference")
+                if (isChqRef) {
+                    return@forEachIndexed
+                }
+
+                val isCredit = text in listOf("credit", "cr", "cr.", "cr amt", "cr amount") ||
                     text.contains("deposit") || text.contains("money in") || text.contains("received") ||
-                    text.matches(Regex(".*\\b(cr|credit)\\b.*")))) {
+                    text.contains("receipt") || text.contains("paid in") ||
+                    text.matches(Regex(".*\\b(cr|credit|deposits?)\\b.*"))
+                if (isCredit) {
                     creditColIndex = colIdx
                     hasCreditOrDebit = true
+                    return@forEachIndexed
                 }
-                if (!isNarration && (text == "debit" || text == "dr" || text == "dr." ||
-                    text.contains("withdrawal") || text.contains("money out") || text.contains("paid") || text.contains("spent") ||
-                    text.matches(Regex(".*\\b(dr|debit)\\b.*")))) {
+
+                val isDebit = text in listOf("debit", "dr", "dr.", "dr amt", "dr amount") ||
+                    text.contains("withdrawal") || text.contains("money out") || text.contains("paid out") ||
+                    text.contains("spent") || text.contains("payment") ||
+                    text.matches(Regex(".*\\b(dr|debit|withdrawals?)\\b.*"))
+                if (isDebit) {
                     debitColIndex = colIdx
                     hasCreditOrDebit = true
+                    return@forEachIndexed
                 }
-                if (!isNarration && (text == "amount" || text.contains("txn amount") || text.contains("net amount"))) {
+
+                if (text in listOf("amount", "amt", "txn amount", "net amount", "transaction amount")) {
                     amountColIndex = colIdx
+                    return@forEachIndexed
                 }
-                if (text == "type" || text == "d/c" || text == "cr/dr" || text.contains("indicator")) {
+
+                if (text in listOf("type", "d/c", "c/d", "cr/dr", "dr/cr") || text.contains("indicator") || text.contains("tran type")) {
                     typeColIndex = colIdx
+                    return@forEachIndexed
                 }
             }
 
@@ -314,6 +345,13 @@ class BankStatementParser(private val context: Context) {
                 headerRowIndex = i
                 break
             }
+        }
+
+        // Safety guarantee: balance column must never be credit or debit
+        if (balanceColIndex != -1) {
+            if (creditColIndex == balanceColIndex) creditColIndex = -1
+            if (debitColIndex == balanceColIndex) debitColIndex = -1
+            if (amountColIndex == balanceColIndex) amountColIndex = -1
         }
 
         if (headerRowIndex == -1) {
@@ -373,43 +411,58 @@ class BankStatementParser(private val context: Context) {
         dataRows.forEachIndexed { idx, row ->
             if (row.isEmpty() || row.all { it.isBlank() }) return@forEachIndexed
 
-            val narration = if (partyColIndex < row.size) row[partyColIndex].trim() else ""
+            val narration = if (partyColIndex < row.size && partyColIndex != -1) row[partyColIndex].trim() else (if (row.size > 1) row[1].trim() else "")
             if (narration.isBlank()) return@forEachIndexed
 
             val lowerNarration = narration.lowercase()
-            if (lowerNarration.contains("total") || lowerNarration.contains("opening balance") || lowerNarration.contains("closing balance")) {
+            if (lowerNarration.contains("total") || lowerNarration.contains("opening balance") || lowerNarration.contains("closing balance") || lowerNarration.contains("b/f")) {
+                if (lowerNarration.contains("opening balance") || lowerNarration.contains("b/f")) {
+                    val openingBal = if (balanceColIndex != -1 && balanceColIndex < row.size) parseDoubleAmount(row[balanceColIndex])
+                                     else row.drop(2).map { parseDoubleAmount(it) }.firstOrNull { it > 0 }
+                    if (openingBal != null && openingBal > 0) {
+                        prevBalance = openingBal
+                    }
+                }
                 return@forEachIndexed
             }
 
-            val dateStr = if (dateColIndex < row.size) row[dateColIndex].trim() else "N/A"
+            val dateStr = if (dateColIndex < row.size && dateColIndex != -1) row[dateColIndex].trim() else "N/A"
 
             var parsedCredit = 0.0
             var parsedDebit = 0.0
             var isCredit = false
             var isDebit = false
 
+            val bal = if (balanceColIndex != -1 && balanceColIndex < row.size) parseDoubleAmount(row[balanceColIndex])
+                      else (if (amountColIndex != -1 && amountColIndex + 1 < row.size) parseDoubleAmount(row[amountColIndex + 1]) else null)
+
             if (creditColIndex != -1 && debitColIndex != -1 && creditColIndex < row.size && debitColIndex < row.size) {
                 parsedCredit = parseDoubleAmount(row[creditColIndex])
                 parsedDebit = parseDoubleAmount(row[debitColIndex])
+
                 if (parsedCredit > 0 && parsedDebit == 0.0) {
                     isCredit = true
                 } else if (parsedDebit > 0 && parsedCredit == 0.0) {
                     isDebit = true
-                } else if (parsedCredit > 0) {
-                    isCredit = true
-                } else if (parsedDebit > 0) {
-                    isDebit = true
+                } else if (parsedCredit > 0 && parsedDebit > 0) {
+                    if (bal != null && prevBalance != null) {
+                        if (Math.abs((prevBalance + parsedCredit) - bal) < 0.05) isCredit = true
+                        else if (Math.abs((prevBalance - parsedDebit) - bal) < 0.05) isDebit = true
+                        else if (parsedCredit >= parsedDebit) isCredit = true else isDebit = true
+                    } else {
+                        if (lowerNarration.contains("cr") || lowerNarration.contains("deposit") || lowerNarration.contains("salary")) isCredit = true
+                        else isDebit = true
+                    }
                 }
             } else if (amountColIndex != -1 && amountColIndex < row.size) {
                 val amtCell = row[amountColIndex].uppercase()
                 val amt = parseDoubleAmount(amtCell)
                 val typeStr = if (typeColIndex != -1 && typeColIndex < row.size) row[typeColIndex].uppercase() else ""
-                val bal = if (amountColIndex + 1 < row.size) parseDoubleAmount(row[amountColIndex + 1]) else null
 
-                if (amtCell.contains("CR") || typeStr.contains("CR") || typeStr.contains("DEPOSIT") || typeStr.contains("CREDIT")) {
+                if (amtCell.contains("CR") || typeStr.contains("CR") || typeStr.contains("DEPOSIT") || typeStr.contains("CREDIT") || typeStr.contains("REC")) {
                     isCredit = true
                     parsedCredit = Math.abs(amt)
-                } else if (amtCell.contains("DR") || typeStr.contains("DR") || typeStr.contains("WITHDRAW") || typeStr.contains("DEBIT") || amt < 0) {
+                } else if (amtCell.contains("DR") || typeStr.contains("DR") || typeStr.contains("WITHDRAW") || typeStr.contains("DEBIT") || typeStr.contains("PAY") || amt < 0) {
                     isDebit = true
                     parsedDebit = Math.abs(amt)
                 } else if (bal != null && prevBalance != null && bal != prevBalance && Math.abs((prevBalance + amt) - bal) < 0.05) {
@@ -420,6 +473,14 @@ class BankStatementParser(private val context: Context) {
                     // Exact mathematical proof: balance decreased by transaction amount -> Debit
                     isDebit = true
                     parsedDebit = amt
+                } else if (bal != null && prevBalance != null && bal != prevBalance && Math.abs((bal + amt) - prevBalance) < 0.05) {
+                    // Reverse chronological proof: newer balance + amt = older balance -> Debit
+                    isDebit = true
+                    parsedDebit = amt
+                } else if (bal != null && prevBalance != null && bal != prevBalance && Math.abs((bal - amt) - prevBalance) < 0.05) {
+                    // Reverse chronological proof: newer balance - amt = older balance -> Credit
+                    isCredit = true
+                    parsedCredit = amt
                 } else if (bal != null && prevBalance != null && bal != prevBalance) {
                     if (bal > prevBalance) {
                         isCredit = true
@@ -428,7 +489,7 @@ class BankStatementParser(private val context: Context) {
                         isDebit = true
                         parsedDebit = amt
                     }
-                } else if (lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend|deposit|received)\\b.*"))) {
+                } else if (lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend|deposit|received|receipt)\\b.*"))) {
                     isCredit = true
                     parsedCredit = amt
                 } else {
@@ -440,11 +501,12 @@ class BankStatementParser(private val context: Context) {
                     prevBalance = bal
                 }
             } else {
-                // Take candidate amounts from columns after narration, picking the primary transaction amount (not trailing balance)
-                val candidateAmounts = row.drop(2).map { parseDoubleAmount(it) to it.uppercase() }.filter { it.first > 0 }
+                // Take candidate amounts excluding the balance column
+                val maxColsToInspect = if (balanceColIndex != -1) balanceColIndex else (if (row.size >= 4) row.size - 1 else row.size)
+                val candidateAmounts = row.take(maxColsToInspect).drop(2).map { parseDoubleAmount(it) to it.uppercase() }.filter { it.first > 0 }
                 if (candidateAmounts.isNotEmpty()) {
                     val (txnAmt, rawCell) = candidateAmounts.first()
-                    if (rawCell.contains("CR") || lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend)\\b.*"))) {
+                    if (rawCell.contains("CR") || lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend|deposit|received)\\b.*"))) {
                         isCredit = true
                         parsedCredit = txnAmt
                     } else if (rawCell.contains("DR") || lowerNarration.contains("to ") || lowerNarration.matches(Regex(".*\\b(dr|paid|spent|atm|pos|withdrawal)\\b.*"))) {
