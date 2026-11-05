@@ -99,10 +99,15 @@ class BankStatementParser(private val context: Context) {
             val lines = text.lines()
 
             val universalDateRegex = Regex("(?<!\\d)(?:\\d{1,2}[/.-](?:\\d{1,2}|[A-Za-z]{3,9})[/.-]\\d{2,4}|\\d{4}[/.-]\\d{1,2}[/.-]\\d{1,2}|[A-Za-z]{3,9}\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{2,4})(?!\\d)", RegexOption.IGNORE_CASE)
-            val currencyAmountRegex = Regex("(?<!\\w)(?:₹|Rs\\.?|\\$)?\\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\\.[0-9]{2})?|[0-9]+\\.[0-9]{2})\\s*(CR|DR|cr|dr)?(?!\\w)")
+            // Flexible regex that matches amounts even if decimal dot has spaces around it (e.g. 1499 . 00) or commas
+            val currencyAmountRegex = Regex("(?<!\\w)(?:₹|Rs\\.?|\\$)?\\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\\.[0-9]{1,2})?|[0-9]+(?:\\.[0-9]{1,2})?)\\s*(CR|DR|cr|dr)?(?!\\w)")
 
             for (line in lines) {
-                val trimmed = line.trim()
+                // Normalize spaces around dots and commas inside numbers (e.g. "1,499 . 00" -> "1,499.00")
+                val trimmed = line
+                    .replace(Regex("(\\d+)\\s*\\.\\s*(\\d{1,2})\\b"), "$1.$2")
+                    .replace(Regex("(\\d+)\\s*,\\s*(\\d{2,3})"), "$1,$2")
+                    .trim()
                 if (trimmed.isBlank()) continue
 
                 // Skip recurring boilerplate
@@ -120,7 +125,14 @@ class BankStatementParser(private val context: Context) {
                     val beforeDate = trimmed.substring(0, dateMatch.range.first).trim()
                     val afterDate = trimmed.substring(dateMatch.range.last + 1).trim()
 
-                    val amtMatches = currencyAmountRegex.findAll(afterDate).toList()
+                    // Filter valid transaction amounts (must have dot, comma, CR/DR or appear at the end)
+                    val rawAmtMatches = currencyAmountRegex.findAll(afterDate).toList()
+                    val amtMatches = rawAmtMatches.filter { match ->
+                        val v = match.groupValues[1]
+                        val tag = match.groupValues[2]
+                        v.contains('.') || v.contains(',') || tag.isNotEmpty() || (match.range.first >= afterDate.length / 2 && v.toDoubleOrNull() ?: 0.0 >= 10.0)
+                    }
+
                     if (amtMatches.isNotEmpty()) {
                         val firstAmtStart = amtMatches.first().range.first
                         val narration = afterDate.substring(0, firstAmtStart).trim()
@@ -140,7 +152,12 @@ class BankStatementParser(private val context: Context) {
                         }
                     }
                 } else if (resultRows.isNotEmpty()) {
-                    val amtMatches = currencyAmountRegex.findAll(trimmed).toList()
+                    val rawAmtMatches = currencyAmountRegex.findAll(trimmed).toList()
+                    val amtMatches = rawAmtMatches.filter { match ->
+                        val v = match.groupValues[1]
+                        val tag = match.groupValues[2]
+                        v.contains('.') || v.contains(',') || tag.isNotEmpty()
+                    }
                     if (amtMatches.isEmpty()) {
                         // Multi-line narration continuation: append to previous row's narration
                         val lastIdx = resultRows.lastIndex
@@ -160,6 +177,16 @@ class BankStatementParser(private val context: Context) {
                     if (tokens.size >= 2) {
                         resultRows.add(tokens)
                     }
+                }
+            }
+
+            // If rows have structured format, add explicit header row so processTransactionRows never misclassifies balance as credit
+            val firstData = resultRows.firstOrNull { it.size >= 3 && universalDateRegex.containsMatchIn(it[0]) }
+            if (firstData != null) {
+                if (firstData.size == 4) {
+                    resultRows.add(0, listOf("Date", "Description", "Amount", "Balance"))
+                } else if (firstData.size >= 5) {
+                    resultRows.add(0, listOf("Date", "Description", "Debit", "Credit", "Balance"))
                 }
             }
         }
@@ -301,9 +328,24 @@ class BankStatementParser(private val context: Context) {
                 val detectedDateCol = sampleRow.indexOfFirst { dateRegex.containsMatchIn(it) }
                 dateColIndex = if (detectedDateCol != -1) detectedDateCol else 0
                 partyColIndex = if (dateColIndex == 0) 1.coerceAtMost(sampleRow.lastIndex) else 0
-                if (sampleRow.size >= 4) {
+                if (sampleRow.size >= 5) {
                     debitColIndex = 2
                     creditColIndex = 3
+                } else if (sampleRow.size == 4) {
+                    // Check if column 2 and 3 behave as separate Debit & Credit columns (one is 0 or empty when other has value)
+                    val hasMutuallyExclusiveDrCr = allRows.drop(firstDataRow).take(10).any { r ->
+                        if (r.size >= 4) {
+                            val a = parseDoubleAmount(r[2])
+                            val b = parseDoubleAmount(r[3])
+                            (a > 0 && b == 0.0) || (b > 0 && a == 0.0)
+                        } else false
+                    }
+                    if (hasMutuallyExclusiveDrCr) {
+                        debitColIndex = 2
+                        creditColIndex = 3
+                    } else {
+                        amountColIndex = 2
+                    }
                 } else if (sampleRow.size == 3) {
                     amountColIndex = 2
                 }
@@ -325,7 +367,8 @@ class BankStatementParser(private val context: Context) {
         val debitPartyMap = mutableMapOf<String, Pair<Double, Int>>()  // party -> (sumAmount, count)
 
         // Process data rows
-        val dataRows = allRows.drop(headerRowIndex + 1)
+        val dataRows = if (headerRowIndex >= 0) allRows.drop(headerRowIndex + 1) else allRows
+        var prevBalance: Double? = null
 
         dataRows.forEachIndexed { idx, row ->
             if (row.isEmpty() || row.all { it.isBlank() }) return@forEachIndexed
@@ -345,21 +388,23 @@ class BankStatementParser(private val context: Context) {
             var isCredit = false
             var isDebit = false
 
-            if (creditColIndex != -1 && creditColIndex < row.size) {
+            if (creditColIndex != -1 && debitColIndex != -1 && creditColIndex < row.size && debitColIndex < row.size) {
                 parsedCredit = parseDoubleAmount(row[creditColIndex])
-            }
-            if (debitColIndex != -1 && debitColIndex < row.size) {
                 parsedDebit = parseDoubleAmount(row[debitColIndex])
-            }
-
-            if (parsedCredit > 0) {
-                isCredit = true
-            } else if (parsedDebit > 0) {
-                isDebit = true
+                if (parsedCredit > 0 && parsedDebit == 0.0) {
+                    isCredit = true
+                } else if (parsedDebit > 0 && parsedCredit == 0.0) {
+                    isDebit = true
+                } else if (parsedCredit > 0) {
+                    isCredit = true
+                } else if (parsedDebit > 0) {
+                    isDebit = true
+                }
             } else if (amountColIndex != -1 && amountColIndex < row.size) {
                 val amtCell = row[amountColIndex].uppercase()
                 val amt = parseDoubleAmount(amtCell)
                 val typeStr = if (typeColIndex != -1 && typeColIndex < row.size) row[typeColIndex].uppercase() else ""
+                val bal = if (amountColIndex + 1 < row.size) parseDoubleAmount(row[amountColIndex + 1]) else null
 
                 if (amtCell.contains("CR") || typeStr.contains("CR") || typeStr.contains("DEPOSIT") || typeStr.contains("CREDIT")) {
                     isCredit = true
@@ -367,14 +412,32 @@ class BankStatementParser(private val context: Context) {
                 } else if (amtCell.contains("DR") || typeStr.contains("DR") || typeStr.contains("WITHDRAW") || typeStr.contains("DEBIT") || amt < 0) {
                     isDebit = true
                     parsedDebit = Math.abs(amt)
-                } else if (amt > 0) {
-                    if (lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend)\\b.*"))) {
+                } else if (bal != null && prevBalance != null && bal != prevBalance && Math.abs((prevBalance + amt) - bal) < 0.05) {
+                    // Exact mathematical proof: balance increased by transaction amount -> Credit
+                    isCredit = true
+                    parsedCredit = amt
+                } else if (bal != null && prevBalance != null && bal != prevBalance && Math.abs((prevBalance - amt) - bal) < 0.05) {
+                    // Exact mathematical proof: balance decreased by transaction amount -> Debit
+                    isDebit = true
+                    parsedDebit = amt
+                } else if (bal != null && prevBalance != null && bal != prevBalance) {
+                    if (bal > prevBalance) {
                         isCredit = true
                         parsedCredit = amt
                     } else {
                         isDebit = true
                         parsedDebit = amt
                     }
+                } else if (lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend|deposit|received)\\b.*"))) {
+                    isCredit = true
+                    parsedCredit = amt
+                } else {
+                    isDebit = true
+                    parsedDebit = amt
+                }
+
+                if (bal != null && bal > 0.0) {
+                    prevBalance = bal
                 }
             } else {
                 // Take candidate amounts from columns after narration, picking the primary transaction amount (not trailing balance)

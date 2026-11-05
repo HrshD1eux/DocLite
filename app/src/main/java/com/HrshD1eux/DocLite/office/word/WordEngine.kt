@@ -1132,7 +1132,7 @@ class WordEngine(private val context: Context) {
                         }
                         "tc" -> {
                             if (insideTableRow) {
-                                val isHeader = currentRowIsHeader || (currentTableHasBorders && currentTableRows.isEmpty()) || (currentCellBgHex != null && !currentCellBgHex.equals("#FFFFFF", ignoreCase = true) && currentCellBold)
+                                val isHeader = currentRowIsHeader
                                 currentCells.add(
                                     WordTableCell(
                                         text = currentCellText.toString().trim(),
@@ -1165,8 +1165,15 @@ class WordEngine(private val context: Context) {
                                      firstCellText.lines().size > 3 ||
                                      firstCellText.contains("int main") ||
                                      firstCellText.contains("void "))
+                                val finalRows = if (currentTableRows.size > 1 && currentTableRows[0].cells.size >= 3) {
+                                    val row0 = currentTableRows[0]
+                                    val newRow0 = WordTableRow(row0.cells.map { it.copy(isHeader = true) })
+                                    listOf(newRow0) + currentTableRows.drop(1)
+                                } else {
+                                    currentTableRows.toList()
+                                }
                                 bodyElements.add(WordBodyElement.TableElement(WordTable(
-                                    rows = currentTableRows.toList(),
+                                    rows = finalRows,
                                     hasBorders = currentTableHasBorders,
                                     hasPageBreakBefore = tableHasPageBreakBefore,
                                     columnWidthsDxa = currentTableColWidths.toList(),

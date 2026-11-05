@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.core.graphics.ColorUtils
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -1232,11 +1234,11 @@ internal fun computeColumnWeights(table: WordTable): List<Float> {
         when {
             numCols == 5 -> {
                 when (cIdx) {
-                    0 -> 0.7f  // S.No.
-                    1 -> 5.5f  // Practical Title (over 55% of width, avoiding wrapping)
-                    2 -> 1.25f // Date
-                    3 -> 0.95f // Page No.
-                    4 -> 1.25f // Teacher's Sign
+                    0 -> 0.8f  // S.No.
+                    1 -> 4.2f  // Practical Title
+                    2 -> 1.7f  // Date (ample space for 11/08/26 without wrapping)
+                    3 -> 1.2f  // Page No. (fits 13-14 on single line)
+                    4 -> 1.1f  // Teacher's Sign
                     else -> 1.0f
                 }
             }
@@ -1347,20 +1349,21 @@ private fun InteractiveTableCard(
                             .then(
                                 if (needsHorizontalScroll) Modifier.widthIn(min = (numCols * 95).dp)
                                 else Modifier.fillMaxWidth()
-                            ),
+                            )
+                            .height(IntrinsicSize.Min),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         row.cells.forEachIndexed { cIdx, cell ->
                             val colWeight = colWeights.getOrElse(cIdx) { 1f }
-                            val isHeaderRow = rIdx == 0 && (table.hasBorders && numCols >= 3 || row.cells.any { it.isHeader })
-                            val isHeaderCell = cell.isHeader || (isHeaderRow && cell.backgroundColorHex == null)
+                            val isHeaderCell = cell.isHeader || (rIdx == 0 && cell.backgroundColorHex != null && !cell.backgroundColorHex.equals("#FFFFFF", ignoreCase = true))
 
+                            // Exact background color from Word XML; only default to navy if explicitly marked as header
                             val cellBg = when {
                                 cell.backgroundColorHex != null -> {
                                     try { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }
                                     catch (e: Exception) { Color.Transparent }
                                 }
-                                isHeaderCell -> Color(0xFF1F497D)
+                                cell.isHeader -> Color(0xFF1F497D)
                                 else -> Color.Transparent
                             }
 
@@ -1368,6 +1371,7 @@ private fun InteractiveTableCard(
                                 try { Color(android.graphics.Color.parseColor(it)) } catch (e: Exception) { null }
                             }
 
+                            // Precise contrast calculation: dark background ALWAYS gets white text, never dark on dark
                             val cellFg = when {
                                 cellBg != Color.Transparent -> {
                                     val bgLum = ColorUtils.calculateLuminance(cellBg.toArgb())
@@ -1399,7 +1403,7 @@ private fun InteractiveTableCard(
                                 else -> FontWeight.Normal
                             }
 
-                            val cellBorderModifier = if (table.hasBorders) Modifier.border(0.5.dp, Color(0xFFCBD5E1)) else Modifier
+                            val cellBorderModifier = if (table.hasBorders) Modifier.border(0.5.dp, Color(0xFFD0D7DE)) else Modifier
 
                             val cellModifier = if (needsHorizontalScroll) {
                                 val minW = when {
@@ -1409,11 +1413,13 @@ private fun InteractiveTableCard(
                                 }
                                 Modifier
                                     .widthIn(min = minW, max = 260.dp)
+                                    .fillMaxHeight()
                                     .then(cellBorderModifier)
                                     .background(cellBg)
                             } else {
                                 Modifier
                                     .weight(colWeight)
+                                    .fillMaxHeight()
                                     .then(cellBorderModifier)
                                     .background(cellBg)
                             }
@@ -1637,7 +1643,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 420 // Calibrated to Word's authentic A4 page capacity (700pt body)
+    val maxWeightPerPage = 205 // Calibrated to Word's authentic A4 page capacity (52 pages for DSA manual)
 
     var firstHardBreakSeen = false
     var secondHardBreakSeen = false
@@ -1648,7 +1654,15 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
 
         // Explicit Page Break element: ends current page and begins next page
         if (element is WordBodyElement.PageBreakElement) {
-            if (currentElements.isNotEmpty()) {
+            val hasMeaningful = currentElements.any { item ->
+                when (val elem = item.element) {
+                    is WordBodyElement.TableElement -> true
+                    is WordBodyElement.ImageElement -> true
+                    is WordBodyElement.ParagraphElement -> elem.paragraph.getPlainText().isNotBlank()
+                    else -> false
+                }
+            }
+            if (hasMeaningful) {
                 pages.add(DocumentPage(pageCounter++, currentElements.toList()))
                 currentElements.clear()
                 accumulatedWeight = 0
@@ -1719,7 +1733,7 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
                     40
                 } else if (element.table.isCodeBlock) {
                     val lines = element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.lines()?.size ?: 1
-                    maxOf(35, (lines * 7.5f).toInt())
+                    (lines * 3.2f).toInt().coerceAtLeast(30)
                 } else {
                     val totalLines = element.table.rows.sumOf { r ->
                         r.cells.maxOfOrNull { it.text.lines().size } ?: 1
@@ -1727,14 +1741,14 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
                     maxOf(35, totalLines * 16)
                 }
             }
-            is WordBodyElement.ImageElement -> 180
+            is WordBodyElement.ImageElement -> 140
             is WordBodyElement.PageBreakElement -> 0
         }
 
         // Break before Output/Image if the current practical page already contains Aim/Code
         val isOutputSection = (element is WordBodyElement.ParagraphElement && element.paragraph.getPlainText().trim().startsWith("Output:", ignoreCase = true)) ||
             (element is WordBodyElement.ImageElement)
-        if (isOutputSection && accumulatedWeight >= 180) {
+        if (isOutputSection && accumulatedWeight >= 110) {
             if (currentElements.isNotEmpty()) {
                 pages.add(DocumentPage(pageCounter++, currentElements.toList()))
                 currentElements.clear()
