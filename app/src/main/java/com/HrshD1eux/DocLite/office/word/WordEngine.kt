@@ -626,6 +626,7 @@ class WordEngine(private val context: Context) {
         var pSpacingAfterDp: Float? = null
         var currentRowIsHeader = false
         val currentTableRows = mutableListOf<WordTableRow>()
+        val currentTableColWidths = mutableListOf<Int>()
         val currentCells = mutableListOf<WordTableCell>()
         val currentCellText = StringBuilder()
         var currentCellBgHex: String? = null
@@ -676,6 +677,16 @@ class WordEngine(private val context: Context) {
                             nilBorderCount = 0
                             totalBorderCount = 0
                             currentTableRows.clear()
+                            currentTableColWidths.clear()
+                        }
+                        "gridCol" -> {
+                            if (insideTable && !insideTableCell) {
+                                val wAttr = parser.getAttributeValue(null, "w")
+                                    ?: (0 until parser.attributeCount).firstNotNullOfOrNull { i ->
+                                        if (parser.getAttributeName(i).substringAfterLast(':').equals("w", ignoreCase = true)) parser.getAttributeValue(i) else null
+                                    }
+                                wAttr?.toIntOrNull()?.let { currentTableColWidths.add(it) }
+                            }
                         }
                         "tblBorders" -> {
                             if (insideTable && !insideTableCell) {
@@ -989,9 +1000,9 @@ class WordEngine(private val context: Context) {
                                         bodyElements.add(WordBodyElement.PageBreakElement(pageNumber = pageNumberCounter))
                                     }
                                 }
-                            } else if (insideRun) {
+                            } else {
                                 if (insideTableCell) currentCellText.append("\n")
-                                else currentRuns.add(TextRun(text = "\n", style = TextStyle(isBold, isItalic, isUnderline, fontSizeSp, fontColorHex)))
+                                else if (insideRun) currentRuns.add(TextRun(text = "\n", style = TextStyle(isBold, isItalic, isUnderline, fontSizeSp, fontColorHex)))
                             }
                         }
                         "drawing", "pict" -> {
@@ -1073,6 +1084,7 @@ class WordEngine(private val context: Context) {
                                                 imageUri = cachedUri,
                                                 widthDp = currentDrawingWidthDp,
                                                 heightDp = currentDrawingHeightDp,
+                                                alignment = paraAlignment,
                                                 rawDrawingXml = rawXml
                                             )
                                         )
@@ -1146,10 +1158,19 @@ class WordEngine(private val context: Context) {
                         "tbl" -> {
                             if (currentTableRows.isNotEmpty()) {
                                 val rawXml = rawTableBlocks.getOrNull(topLevelTableIndex++)
+                                val firstCellText = currentTableRows.firstOrNull()?.cells?.firstOrNull()?.text ?: ""
+                                val isCodeBlock = currentTableRows.size == 1 &&
+                                    currentTableRows[0].cells.size == 1 &&
+                                    (firstCellText.contains("#include") ||
+                                     firstCellText.lines().size > 3 ||
+                                     firstCellText.contains("int main") ||
+                                     firstCellText.contains("void "))
                                 bodyElements.add(WordBodyElement.TableElement(WordTable(
                                     rows = currentTableRows.toList(),
                                     hasBorders = currentTableHasBorders,
                                     hasPageBreakBefore = tableHasPageBreakBefore,
+                                    columnWidthsDxa = currentTableColWidths.toList(),
+                                    isCodeBlock = isCodeBlock,
                                     rawXml = rawXml
                                 )))
                             }

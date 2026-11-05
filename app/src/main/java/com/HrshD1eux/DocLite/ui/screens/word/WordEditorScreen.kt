@@ -3,6 +3,7 @@ package com.HrshD1eux.DocLite.ui.screens.word
 import android.net.Uri
 import java.io.File
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontFamily
 import androidx.core.graphics.ColorUtils
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.activity.compose.BackHandler
@@ -353,10 +354,19 @@ fun WordEditorScreen(
             }
 
             is WordUiState.Error -> {
+                val isPermissionError = uiState.message.contains("Permission Denial", ignoreCase = true) ||
+                    uiState.message.contains("grantUriPermission", ignoreCase = true) ||
+                    uiState.message.contains("SecurityException", ignoreCase = true)
                 AlertDialog(
                     onDismissRequest = onBack,
-                    title = { Text("Unsupported or corrupted file format") },
-                    text = { Text(uiState.message) },
+                    title = { Text(if (isPermissionError) "Storage Permission Required" else "Unsupported or corrupted file format") },
+                    text = {
+                        Text(
+                            if (isPermissionError)
+                                "Unable to read this file from the external app because it did not grant read permission.\n\nPlease open the file directly from DocLite's File Manager or Home screen, or ensure 'All files access' is granted to DocLite in Android Settings."
+                            else uiState.message
+                        )
+                    },
                     confirmButton = {
                         TextButton(onClick = onBack) {
                             Text("Go Back")
@@ -1268,9 +1278,44 @@ private fun InteractiveTableCard(
     if (table.rows.isEmpty()) return
 
     val numCols = table.rows.maxOfOrNull { it.cells.size } ?: 0
-    // In A4 print mode or fit-to-screen, standard tables with up to 6 columns fit across the paper without horizontal scrolling
+
+    // Render single-cell code tables (like C source code in practicals) as code container
+    if (table.isCodeBlock || (table.rows.size == 1 && table.rows[0].cells.size == 1 && (table.rows[0].cells[0].text.contains("#include") || table.rows[0].cells[0].text.lines().size > 3))) {
+        val codeText = table.rows[0].cells[0].text
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .background(Color(0xFFF6F8FA), RoundedCornerShape(4.dp))
+                .border(BorderStroke(0.5.dp, Color(0xFFD0D7DE)), RoundedCornerShape(4.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = codeText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.5.sp,
+                    lineHeight = 15.sp,
+                    color = Color(0xFF1F2328)
+                )
+            }
+        }
+        return
+    }
+
     val needsHorizontalScroll = !fitToScreen && numCols > 6
-    val colWeights = remember(table) { computeColumnWeights(table) }
+    val colWeights = remember(table) {
+        if (table.columnWidthsDxa.isNotEmpty() && table.columnWidthsDxa.size == numCols) {
+            val totalDxa = table.columnWidthsDxa.sum().toFloat().coerceAtLeast(1f)
+            table.columnWidthsDxa.map { (it.toFloat() / totalDxa) * numCols.toFloat() }
+        } else {
+            computeColumnWeights(table)
+        }
+    }
 
     val tableCardModifier = if (table.hasBorders) {
         Modifier
@@ -1307,7 +1352,8 @@ private fun InteractiveTableCard(
                     ) {
                         row.cells.forEachIndexed { cIdx, cell ->
                             val colWeight = colWeights.getOrElse(cIdx) { 1f }
-                            val isHeaderCell = cell.isHeader
+                            val isHeaderRow = rIdx == 0 && (table.hasBorders && numCols >= 3 || row.cells.any { it.isHeader })
+                            val isHeaderCell = cell.isHeader || (isHeaderRow && cell.backgroundColorHex == null)
 
                             val cellBg = when {
                                 cell.backgroundColorHex != null -> {
@@ -1318,14 +1364,24 @@ private fun InteractiveTableCard(
                                 else -> Color.Transparent
                             }
 
+                            val declaredColor = cell.textColorHex?.let {
+                                try { Color(android.graphics.Color.parseColor(it)) } catch (e: Exception) { null }
+                            }
+
                             val cellFg = when {
-                                cell.textColorHex != null -> {
-                                    try { Color(android.graphics.Color.parseColor(cell.textColorHex)) }
-                                    catch (e: Exception) { Color(0xFF1E293B) }
+                                cellBg != Color.Transparent -> {
+                                    val bgLum = ColorUtils.calculateLuminance(cellBg.toArgb())
+                                    if (declaredColor != null) {
+                                        val textLum = ColorUtils.calculateLuminance(declaredColor.toArgb())
+                                        if (bgLum < 0.45 && textLum < 0.45) Color.White
+                                        else if (bgLum >= 0.45 && textLum >= 0.45) Color(0xFF1E293B)
+                                        else declaredColor
+                                    } else {
+                                        if (bgLum < 0.45) Color.White else Color(0xFF1E293B)
+                                    }
                                 }
-                                cellBg != Color.Transparent && ColorUtils.calculateLuminance(cellBg.toArgb()) < 0.45 -> {
-                                    Color.White
-                                }
+                                declaredColor != null -> declaredColor
+                                isHeaderCell -> Color.White
                                 else -> Color(0xFF1E293B)
                             }
 
@@ -1501,7 +1557,11 @@ private fun DocumentImageItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = when (element.alignment) {
+            TextAlignment.LEFT -> Alignment.CenterStart
+            TextAlignment.RIGHT -> Alignment.CenterEnd
+            else -> Alignment.Center
+        }
     ) {
         if (isImageError) {
             Column(
@@ -1577,7 +1637,10 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
     var pIndex = 0
     var pageCounter = 1
     var accumulatedWeight = 0
-    val maxWeightPerPage = 210 // Calibrated to Word's authentic A4/Letter page height (52 pages for DSA manual)
+    val maxWeightPerPage = 420 // Calibrated to Word's authentic A4 page capacity (700pt body)
+
+    var firstHardBreakSeen = false
+    var secondHardBreakSeen = false
 
     for (elemIndex in bodyElements.indices) {
         val element = bodyElements[elemIndex]
@@ -1590,7 +1653,33 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
                 currentElements.clear()
                 accumulatedWeight = 0
             }
+            if (!firstHardBreakSeen) firstHardBreakSeen = true
+            else if (!secondHardBreakSeen) secondHardBreakSeen = true
             continue
+        }
+
+        // Section 1: Cover Page - Elements before first hard page break never split!
+        if (!firstHardBreakSeen) {
+            currentElements.add(IndexedDocElement(elemIndex, currentPIndex, element))
+            continue
+        }
+
+        // Section 2: Index Page - Elements before second hard page break never split!
+        if (!secondHardBreakSeen) {
+            currentElements.add(IndexedDocElement(elemIndex, currentPIndex, element))
+            continue
+        }
+
+        // Check for Practical Title table: starts a new practical page
+        val isPracticalTitleTable = element is WordBodyElement.TableElement &&
+            element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.contains("PRACTICAL ", ignoreCase = true) == true
+
+        if (isPracticalTitleTable) {
+            if (currentElements.isNotEmpty()) {
+                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+                currentElements.clear()
+                accumulatedWeight = 0
+            }
         }
 
         // Table with hasPageBreakBefore
@@ -1611,43 +1700,50 @@ internal fun paginateDocumentElements(bodyElements: List<WordBodyElement>): List
             }
         }
 
-        // Weight estimation with realistic line heights
+        // Element weight estimation
         val elemWeight = when (element) {
             is WordBodyElement.ParagraphElement -> {
                 val txt = element.paragraph.getPlainText().trim()
                 if (txt.isEmpty()) {
-                    8 // Compact empty spacer paragraph
+                    6
+                } else if (txt in listOf("Output:", "AIM / OBJECTIVE:", "ALGORITHM:", "Source Code:")) {
+                    20
                 } else {
                     val words = element.paragraph.runs.sumOf { it.text.split("\\s+".toRegex()).count { w -> w.isNotBlank() } }
                     val lines = element.paragraph.runs.sumOf { it.text.count { c -> c == '\n' } } + 1
-                    val maxFontSize = element.paragraph.runs.maxOfOrNull { it.style.fontSizeSp } ?: 16f
-                    val isHeading = element.paragraph.isHeader || element.paragraph.headerLevel > 0 || maxFontSize >= 18f
-                    val headingWeight = if (isHeading) 18 else 0
-                    (lines * 14) + (words * 0.15f).toInt() + headingWeight
+                    (lines * 14) + (words * 0.12f).toInt()
                 }
             }
             is WordBodyElement.TableElement -> {
-                val totalLines = element.table.rows.sumOf { r ->
-                    r.cells.maxOfOrNull { it.text.lines().size } ?: 1
+                if (isPracticalTitleTable) {
+                    40
+                } else if (element.table.isCodeBlock) {
+                    val lines = element.table.rows.firstOrNull()?.cells?.firstOrNull()?.text?.lines()?.size ?: 1
+                    maxOf(35, (lines * 7.5f).toInt())
+                } else {
+                    val totalLines = element.table.rows.sumOf { r ->
+                        r.cells.maxOfOrNull { it.text.lines().size } ?: 1
+                    }
+                    maxOf(35, totalLines * 16)
                 }
-                (totalLines * 16).coerceAtLeast(35)
             }
-            is WordBodyElement.ImageElement -> 130
+            is WordBodyElement.ImageElement -> 180
             is WordBodyElement.PageBreakElement -> 0
         }
 
-        // Keep-with-next heuristic: If current page only contains a heading or "INDEX", don't break before the table/content
-        val onlyHasHeadings = currentElements.isNotEmpty() && currentElements.all {
-            val elem = it.element
-            elem is WordBodyElement.ParagraphElement && (
-                elem.paragraph.isHeader ||
-                elem.paragraph.headerLevel > 0 ||
-                elem.paragraph.getPlainText().trim().lowercase() in listOf("index", "table of contents", "contents", "practical file")
-            )
+        // Break before Output/Image if the current practical page already contains Aim/Code
+        val isOutputSection = (element is WordBodyElement.ParagraphElement && element.paragraph.getPlainText().trim().startsWith("Output:", ignoreCase = true)) ||
+            (element is WordBodyElement.ImageElement)
+        if (isOutputSection && accumulatedWeight >= 180) {
+            if (currentElements.isNotEmpty()) {
+                pages.add(DocumentPage(pageCounter++, currentElements.toList()))
+                currentElements.clear()
+                accumulatedWeight = 0
+            }
         }
 
-        // Natural page break if capacity reached and page already has substantial content
-        if (currentElements.isNotEmpty() && !onlyHasHeadings && (accumulatedWeight + elemWeight > maxWeightPerPage)) {
+        // Heuristic: If capacity reached and current page already has content
+        if (currentElements.isNotEmpty() && (accumulatedWeight + elemWeight > maxWeightPerPage)) {
             pages.add(DocumentPage(pageCounter++, currentElements.toList()))
             currentElements.clear()
             accumulatedWeight = 0

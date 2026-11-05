@@ -64,6 +64,8 @@ data class WordTable(
     val rows: List<WordTableRow> = emptyList(),
     val hasBorders: Boolean = true,
     val hasPageBreakBefore: Boolean = false,
+    val columnWidthsDxa: List<Int> = emptyList(),
+    val isCodeBlock: Boolean = false,
     val rawXml: String? = null
 )
 
@@ -83,6 +85,7 @@ sealed interface WordBodyElement {
         val widthDp: Int = 240,
         val heightDp: Int = 180,
         val caption: String? = null,
+        val alignment: TextAlignment = TextAlignment.CENTER,
         val rawDrawingXml: String? = null,
         override val id: String = java.util.UUID.randomUUID().toString()
     ) : WordBodyElement

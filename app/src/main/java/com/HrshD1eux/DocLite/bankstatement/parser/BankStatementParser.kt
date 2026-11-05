@@ -94,65 +94,71 @@ class BankStatementParser(private val context: Context) {
 
             val stripper = PDFTextStripper()
             stripper.sortByPosition = true
-            stripper.wordSeparator = "   " // 3 spaces to clearly delineate tabular columns
+            stripper.wordSeparator = " " // Single space ensures natural sentence words are not split into columns
             val text = stripper.getText(doc) ?: ""
             val lines = text.lines()
 
-            val universalDateRegex = Regex("\\b(?:\\d{1,2}[/.-](?:\\d{1,2}|[A-Za-z]{3,9})[/.-]\\d{2,4}|\\d{4}[/.-]\\d{1,2}[/.-]\\d{1,2}|[A-Za-z]{3,9}\\s+\\d{1,2},?\\s+\\d{2,4})\\b", RegexOption.IGNORE_CASE)
+            val universalDateRegex = Regex("(?<!\\d)(?:\\d{1,2}[/.-](?:\\d{1,2}|[A-Za-z]{3,9})[/.-]\\d{2,4}|\\d{4}[/.-]\\d{1,2}[/.-]\\d{1,2}|[A-Za-z]{3,9}\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{2,4})(?!\\d)", RegexOption.IGNORE_CASE)
+            val currencyAmountRegex = Regex("(?<!\\w)(?:₹|Rs\\.?|\\$)?\\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\\.[0-9]{2})?|[0-9]+\\.[0-9]{2})\\s*(CR|DR|cr|dr)?(?!\\w)")
 
             for (line in lines) {
                 val trimmed = line.trim()
                 if (trimmed.isBlank()) continue
 
-                // Skip recurring page headers and footers
-                val isBoilerplate = trimmed.startsWith("Page ", ignoreCase = true) ||
+                // Skip recurring boilerplate
+                if (trimmed.startsWith("Page ", ignoreCase = true) ||
                     trimmed.startsWith("Statement of Account", ignoreCase = true) ||
                     trimmed.contains("Generated On:", ignoreCase = true) ||
-                    trimmed.contains("This is a system generated", ignoreCase = true)
-                if (isBoilerplate) continue
+                    trimmed.contains("This is a system generated", ignoreCase = true) ||
+                    trimmed.contains("Statement Period", ignoreCase = true)) {
+                    continue
+                }
 
-                val tokens = trimmed.split(Regex("\\s{2,}|\t")).map { it.trim() }.filter { it.isNotBlank() }
-                if (tokens.size >= 2) {
-                    resultRows.add(tokens)
-                } else {
-                    // Check if line contains a date and amounts separated by single spaces
-                    val dateMatch = universalDateRegex.find(trimmed)
-                    if (dateMatch != null) {
-                        val dateStr = dateMatch.value
-                        val beforeDate = trimmed.substring(0, dateMatch.range.first).trim()
-                        val afterDate = trimmed.substring(dateMatch.range.last + 1).trim()
+                val dateMatch = universalDateRegex.find(trimmed)
+                if (dateMatch != null) {
+                    val dateStr = dateMatch.value
+                    val beforeDate = trimmed.substring(0, dateMatch.range.first).trim()
+                    val afterDate = trimmed.substring(dateMatch.range.last + 1).trim()
 
-                        // Extract amounts from afterDate
-                        val amountPattern = Regex("([\\d,]+\\.\\d{2}|[\\d,]+(?:\\s*(?:CR|DR|cr|dr))?)")
-                        val amountMatches = amountPattern.findAll(afterDate).toList()
-
-                        if (amountMatches.isNotEmpty()) {
-                            val firstAmtStart = amountMatches.first().range.first
-                            val narrationPart = afterDate.substring(0, firstAmtStart).trim()
-                            val row = mutableListOf<String>()
-                            if (beforeDate.isNotBlank()) row.add(beforeDate)
-                            row.add(dateStr)
-                            row.add(if (narrationPart.isNotBlank()) narrationPart else "Transaction")
-                            for (amtMatch in amountMatches) {
-                                row.add(amtMatch.value.trim())
-                            }
-                            resultRows.add(row)
+                    val amtMatches = currencyAmountRegex.findAll(afterDate).toList()
+                    if (amtMatches.isNotEmpty()) {
+                        val firstAmtStart = amtMatches.first().range.first
+                        val narration = afterDate.substring(0, firstAmtStart).trim()
+                        val row = mutableListOf<String>()
+                        row.add(dateStr)
+                        row.add(if (narration.isNotBlank()) narration else (if (beforeDate.isNotBlank()) beforeDate else "Transaction"))
+                        for (amt in amtMatches) {
+                            row.add(amt.value.trim())
+                        }
+                        resultRows.add(row)
+                    } else {
+                        val tokens = trimmed.split(Regex("\\s{2,}|\t")).map { it.trim() }.filter { it.isNotBlank() }
+                        if (tokens.size >= 2) {
+                            resultRows.add(tokens)
                         } else {
                             resultRows.add(listOf(dateStr, afterDate))
                         }
-                    } else if (resultRows.isNotEmpty() && !universalDateRegex.containsMatchIn(trimmed)) {
+                    }
+                } else if (resultRows.isNotEmpty()) {
+                    val amtMatches = currencyAmountRegex.findAll(trimmed).toList()
+                    if (amtMatches.isEmpty()) {
                         // Multi-line narration continuation: append to previous row's narration
-                        val lastIndex = resultRows.lastIndex
-                        val prevRow = resultRows[lastIndex].toMutableList()
+                        val lastIdx = resultRows.lastIndex
+                        val prevRow = resultRows[lastIdx].toMutableList()
                         if (prevRow.size >= 2) {
                             prevRow[1] = "${prevRow[1]} $trimmed"
-                            resultRows[lastIndex] = prevRow
-                        } else {
-                            prevRow[0] = "${prevRow[0]} $trimmed"
-                            resultRows[lastIndex] = prevRow
+                            resultRows[lastIdx] = prevRow
                         }
                     } else {
-                        resultRows.add(listOf(trimmed))
+                        val tokens = trimmed.split(Regex("\\s{2,}|\t")).map { it.trim() }.filter { it.isNotBlank() }
+                        if (tokens.size >= 2) {
+                            resultRows.add(tokens)
+                        }
+                    }
+                } else {
+                    val tokens = trimmed.split(Regex("\\s{2,}|\t")).map { it.trim() }.filter { it.isNotBlank() }
+                    if (tokens.size >= 2) {
+                        resultRows.add(tokens)
                     }
                 }
             }
@@ -371,17 +377,19 @@ class BankStatementParser(private val context: Context) {
                     }
                 }
             } else {
-                row.forEach { cell ->
-                    val upperCell = cell.uppercase()
-                    val valAmt = parseDoubleAmount(cell)
-                    if (valAmt > 0) {
-                        if (upperCell.contains("CR") || lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund)\\b.*"))) {
-                            isCredit = true
-                            parsedCredit = valAmt
-                        } else {
-                            isDebit = true
-                            parsedDebit = valAmt
-                        }
+                // Take candidate amounts from columns after narration, picking the primary transaction amount (not trailing balance)
+                val candidateAmounts = row.drop(2).map { parseDoubleAmount(it) to it.uppercase() }.filter { it.first > 0 }
+                if (candidateAmounts.isNotEmpty()) {
+                    val (txnAmt, rawCell) = candidateAmounts.first()
+                    if (rawCell.contains("CR") || lowerNarration.contains("by ") || lowerNarration.matches(Regex(".*\\b(cr|salary|refund|interest|dividend)\\b.*"))) {
+                        isCredit = true
+                        parsedCredit = txnAmt
+                    } else if (rawCell.contains("DR") || lowerNarration.contains("to ") || lowerNarration.matches(Regex(".*\\b(dr|paid|spent|atm|pos|withdrawal)\\b.*"))) {
+                        isDebit = true
+                        parsedDebit = txnAmt
+                    } else {
+                        isDebit = true
+                        parsedDebit = txnAmt
                     }
                 }
             }
