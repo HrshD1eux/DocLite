@@ -418,7 +418,7 @@ fun PdfAnnotatorScreen(
                                     }
                                 },
                                 onDoubleTap = { tapOffset ->
-                                    if (scale > 1.1f) {
+                                    if (scale < 0.95f || scale > 1.05f) {
                                         scale = 1f
                                         panOffset = Offset.Zero
                                     } else {
@@ -444,18 +444,18 @@ fun PdfAnnotatorScreen(
                                         val panChange = event.calculatePan()
 
                                         if (zoomChange != 1f || panChange != Offset.Zero) {
-                                            val newScale = (scale * zoomChange).coerceIn(1f, 3.5f)
-                                            if (newScale <= 1.05f) {
-                                                scale = 1f
-                                                panOffset = Offset.Zero
+                                            // Allow zooming out down to 0.45f so user can view full page height & borders
+                                            val newScale = (scale * zoomChange).coerceIn(0.45f, 3.5f)
+                                            val maxX = ((newScale - 1f).coerceAtLeast(0f)) * size.width / 2f
+                                            panOffset = if (newScale <= 1.02f) {
+                                                Offset.Zero
                                             } else {
-                                                val maxX = (newScale - 1f) * size.width / 2f
-                                                panOffset = Offset(
+                                                Offset(
                                                     (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
                                                     0f
                                                 )
-                                                scale = newScale
                                             }
+                                            scale = newScale
 
                                             event.changes.forEach {
                                                 if (it.positionChanged()) it.consume()
@@ -478,7 +478,7 @@ fun PdfAnnotatorScreen(
                                     }
                                 } while (event.changes.any { it.pressed })
 
-                                if (scale <= 1.05f) {
+                                if (scale in 0.96f..1.04f) {
                                     scale = 1f
                                     panOffset = Offset.Zero
                                 }
@@ -717,8 +717,8 @@ fun PdfAnnotatorScreen(
                     }
                 }
 
-                // Reset Zoom Floating Button (Visible when zoomed in)
-                if (scale > 1.05f) {
+                // Reset Zoom Floating Button (Visible when zoomed in or zoomed out)
+                if (scale < 0.95f || scale > 1.05f) {
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -744,7 +744,7 @@ fun PdfAnnotatorScreen(
                             )
                             Spacer(modifier = Modifier.size(4.dp))
                             Text(
-                                text = "1.0x",
+                                text = "${(scale * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )

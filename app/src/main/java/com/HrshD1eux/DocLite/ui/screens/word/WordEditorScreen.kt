@@ -14,6 +14,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.input.pointer.positionChanged
+import kotlin.math.abs
+
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
@@ -422,10 +429,8 @@ fun WordEditorScreen(
                                 selected = a4PrintMode,
                                 onClick = {
                                     a4PrintMode = !a4PrintMode
-                                    if (!a4PrintMode) {
-                                        zoomScale = 1f
-                                        panOffset = Offset.Zero
-                                    }
+                                    zoomScale = 1f
+                                    panOffset = Offset.Zero
                                 },
                                 label = {
                                     Text(
@@ -458,39 +463,78 @@ fun WordEditorScreen(
                         )
                     }
 
-                    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-                        if (a4PrintMode) {
-                            val newScale = (zoomScale * zoomChange).coerceIn(0.6f, 3.0f)
-                            zoomScale = newScale
-                            if (newScale > 1.05f) {
-                                panOffset = Offset(
-                                    x = (panOffset.x + panChange.x).coerceIn(-400f * (newScale - 1f), 400f * (newScale - 1f)),
-                                    y = 0f
-                                )
-                            } else {
-                                panOffset = Offset.Zero
-                            }
-                        }
-                    }
-
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(if (a4PrintMode) Color(0xFFE2E8F0) else MaterialTheme.colorScheme.surface)
-                            .then(
-                                if (a4PrintMode) {
-                                    Modifier
-                                        .transformable(state = transformableState)
-                                        .pointerInput(Unit) {
-                                            detectTapGestures(
-                                                onDoubleTap = {
-                                                    zoomScale = if (zoomScale > 1.05f) 1f else 1.5f
-                                                    panOffset = Offset.Zero
-                                                }
-                                            )
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onDoubleTap = { tapOffset ->
+                                        if (zoomScale < 0.95f || zoomScale > 1.05f) {
+                                            zoomScale = 1f
+                                            panOffset = Offset.Zero
+                                        } else {
+                                            zoomScale = 1.6f
+                                            val centerX = size.width / 2f
+                                            val targetX = (centerX - tapOffset.x) * 0.8f
+                                            panOffset = Offset(targetX, 0f)
                                         }
-                                } else Modifier
-                            ),
+                                    }
+                                )
+                            }
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        val touchCount = event.changes.size
+
+                                        // Two-finger gesture: pinch zoom and two-finger pan
+                                        if (touchCount > 1) {
+                                            val zoomChange = event.calculateZoom()
+                                            val panChange = event.calculatePan()
+
+                                            if (zoomChange != 1f || panChange != Offset.Zero) {
+                                                // Allow pinch out up to 3.5x and pinch inside down to 0.45x
+                                                val newScale = (zoomScale * zoomChange).coerceIn(0.45f, 3.5f)
+                                                val maxX = ((newScale - 1f).coerceAtLeast(0f)) * size.width / 2f
+                                                val maxY = ((newScale - 1f).coerceAtLeast(0f)) * size.height / 2f
+                                                panOffset = if (newScale <= 1.02f) {
+                                                    Offset.Zero
+                                                } else {
+                                                    Offset(
+                                                        (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
+                                                        (panOffset.y + panChange.y).coerceIn(-maxY, maxY)
+                                                    )
+                                                }
+                                                zoomScale = newScale
+
+                                                event.changes.forEach {
+                                                    if (it.positionChanged()) it.consume()
+                                                }
+                                            }
+                                        } else if (zoomScale > 1.05f && touchCount == 1) {
+                                            // Single finger pan when zoomed in: allow horizontal pan for wide view
+                                            val panChange = event.calculatePan()
+                                            if (abs(panChange.x) > abs(panChange.y) * 1.2f && panChange.x != 0f) {
+                                                val maxX = (zoomScale - 1f) * size.width / 2f
+                                                panOffset = Offset(
+                                                    (panOffset.x + panChange.x).coerceIn(-maxX, maxX),
+                                                    panOffset.y
+                                                )
+                                                event.changes.forEach {
+                                                    if (it.positionChanged()) it.consume()
+                                                }
+                                            }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+
+                                    if (zoomScale in 0.96f..1.04f) {
+                                        zoomScale = 1f
+                                        panOffset = Offset.Zero
+                                    }
+                                }
+                            },
                         contentAlignment = Alignment.TopCenter
                     ) {
                         if (a4PrintMode) {
@@ -503,6 +547,7 @@ fun WordEditorScreen(
                                         scaleX = zoomScale
                                         scaleY = zoomScale
                                         translationX = panOffset.x
+                                        translationY = panOffset.y
                                     }
                                     .padding(horizontal = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -604,6 +649,12 @@ fun WordEditorScreen(
                                 modifier = Modifier
                                     .widthIn(max = 680.dp)
                                     .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = zoomScale
+                                        scaleY = zoomScale
+                                        translationX = panOffset.x
+                                        translationY = panOffset.y
+                                    }
                                     .padding(horizontal = 16.dp),
                                 verticalArrangement = Arrangement.Top,
                                 contentPadding = PaddingValues(top = 12.dp, bottom = 120.dp)
@@ -670,8 +721,8 @@ fun WordEditorScreen(
                             }
                         }
 
-                        // Floating Zoom Reset Badge in A4 Print View
-                        if (a4PrintMode && (zoomScale < 0.95f || zoomScale > 1.05f)) {
+                        // Floating Zoom Reset Badge (Visible in both A4 and Flow Mode when zoomed in or zoomed out)
+                        if (zoomScale < 0.95f || zoomScale > 1.05f) {
                             Surface(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
